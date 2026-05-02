@@ -182,6 +182,20 @@ EOF
         return
     fi
 
+    # ProtectSystem=strict on the main unit makes everything outside the
+    # dashboard's own ReadWritePaths read-only. Add Headscale's data dir
+    # via a drop-in so the dashboard process can actually write the DB.
+    DROP_IN_DIR=/etc/systemd/system/lss-headscale-dashboard.service.d
+    mkdir -p "$DROP_IN_DIR"
+    cat >"$DROP_IN_DIR/headscale-colocation.conf" <<EOF
+# Managed by lss-headscale-dashboard installer.
+[Service]
+ReadWritePaths=$HEADSCALE_DIR
+EOF
+    systemctl daemon-reload
+    systemctl restart lss-headscale-dashboard.service 2>/dev/null || true
+    echo "  · ReadWritePaths drop-in for $HEADSCALE_DIR installed"
+
     if ! command -v setfacl >/dev/null 2>&1; then
         echo "  · installing acl package for setfacl"
         apt-get install -y -qq acl >/dev/null 2>&1 || true
