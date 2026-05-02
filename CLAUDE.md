@@ -4,114 +4,122 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-A self-hosted web management dashboard for [Headscale](https://github.com/juanfont/headscale). Single Go binary, server-rendered, ships with a one-line installer. The dashboard typically lives **on the same host as `headscaled`** and talks to it over its local gRPC unix socket, but the first-run wizard also supports pointing at a remote Headscale instance over gRPC + TLS.
+A self-hosted web management dashboard for [Headscale](https://github.com/juanfont/headscale). Single Go binary, server-rendered, ships with a one-line installer. Designed to run **co-located with `headscaled`** so it can edit columns the API doesn't expose (ipv4, ipv6, hostname) directly in Headscale's SQLite DB and restart Headscale to pick up the change. Remote installs work too — they just lose the direct-DB features.
 
 ## Stack
 
-- **Backend:** Go 1.25+, stdlib `net/http` (Go 1.22+ method-prefixed mux patterns; can graduate to `chi` if routing complexity warrants it). Logging via `log/slog`.
-- **Templating:** stdlib `html/template` with `embed.FS` (no codegen step). [templ](https://templ.guide) is a future option if templating gets complex; not used for v1.
-- **Interactivity:** [HTMX](https://htmx.org) — no Node toolchain, no SPA.
-- **UI theme:** [Tabler.io](https://tabler.io) prebuilt CSS/JS, dropped into `static/tabler/` (gitignored — fetched at install time, see README).
-- **Storage:** SQLite via `modernc.org/sqlite` (pure Go, **CGO-free** — keeps cross-compile in CI trivial).
-- **gRPC:** `google.golang.org/grpc` + generated stubs from vendored Headscale `.proto` files.
+- **Backend:** Go 1.25+, stdlib `net/http` (Go 1.22+ method-prefixed mux patterns).
+- **Templating:** stdlib `html/template` with `embed.FS`.
+- **Interactivity:** plain `fetch()` and small inline scripts; HTMX is loaded but only used in a couple of places.
+- **UI theme:** [Tabler.io](https://tabler.io) loaded from CDN at runtime (no static-asset bundling).
+- **Storage (dashboard):** SQLite via `modernc.org/sqlite` (pure Go, **CGO-free**).
+- **Headscale API:** HTTP/REST against `/api/v1/...` over Headscale's gRPC-Gateway, Bearer API key. No protoc / generated stubs.
+- **WebAuthn:** `github.com/go-webauthn/webauthn` for passkey/Yubikey registration (login-via-passkey is roadmap).
 
 When adding dependencies, prefer pure-Go packages so `CGO_ENABLED=0` builds keep working.
 
 ## Headscale communication
 
-gRPC. Two modes, picked by the user in the setup wizard and persisted in `config.yaml`:
+Two channels:
 
-- `socket` (default, on-host install): `unix:///var/run/headscale/headscale.sock`. The systemd unit sets `SupplementaryGroups=headscale` so the service user can read it.
-- `grpc` (remote install): `host:port` + `tls: true` + Bearer API key in gRPC metadata.
+1. **REST API** (always): `internal/headscale/client.go` calls `/api/v1/user`, `/api/v1/node`, `/api/v1/preauthkey`, `/api/v1/policy`, etc. Bearer auth. Configured under Settings → Headscale connection (Address + API key + ClientURL for the public Tailscale-client URL).
 
-**Current state (v1.0.0):** `internal/headscale/client.go` calls Headscale's gRPC-Gateway HTTP/REST API at `/api/v1/...` with a Bearer API key. This avoids the protoc + Go-stub generation that raw gRPC would require, while covering every management endpoint. Address + API key are configured via the dashboard's Settings page (or wizard step 3 once it's built).
+2. **Local SQLite + systemctl** (optional, on-host only): `internal/headscaledb` opens Headscale's `db.sqlite` directly to write columns the API doesn't expose (`ipv4`, `ipv6`, `hostname`, plus the rest of the row). After a write, runs the configured restart command (default `sudo -n /usr/bin/systemctl restart headscale.service`) and the wait/spinner page polls `/headscale/ready` until the API answers again.
+
+   Column whitelist in `internal/headscaledb/headscaledb.go` (`AllowedColumns`). Do not pass user-supplied column names to the UPDATE — only entries in that whitelist.
 
 **Hard rules:**
 
-- Never read Headscale's database directly. Schema is internal.
-- Never shell out to the `headscale` CLI. Use the gRPC API.
-- Always test the connection in the setup wizard (e.g. `ListNodes`) before persisting Headscale config — saving an unreachable config bricks the dashboard.
+- Never shell out to the `headscale` CLI from request handlers. Use the REST API.
+- Direct DB writes go through `headscaledb.UpdateNodeFields` (whitelisted, parameterized) — never construct SQL from form input.
+- The Edit Node modal's data is fetched via `headscaledb.ListFullNodes` and passed in as `DBNodes` map[string]FullNode keyed by row id. Each modal renders only the columns we whitelisted.
+- The Restart Headscale code path always runs through the configured RestartCmd; if you change the default, update install.sh's sudoers drop-in too.
 
 ## Deploy topology
 
 ```
-Default install (no proxy on the host):
-    Internet → :9000 (Go app, 0.0.0.0:9000) → Headscale gRPC
+Default install (no proxy):
+    Internet → :9000 (Go app, 0.0.0.0:9000) → Headscale REST + local DB
 
 Production (HAProxy on the perimeter):
-    Internet → HAProxy (TLS) → :9000 (Go app, set to 127.0.0.1) → Headscale gRPC
+    Internet → HAProxy (TLS) → :9000 (Go app, set to 127.0.0.1) → Headscale
 ```
 
-- Default `listen` is `0.0.0.0:9000` so the installer's `curl|sh` produces a directly-reachable dashboard. When HAProxy/nginx is added on the same host, change `listen` in `config.yaml` to `127.0.0.1:9000` so the dashboard is only reachable via the proxy. `deploy/nginx/lss-headscale-dashboard.conf` is reference config for that scenario; the installer does not enable it.
-- TLS, HSTS, HTTP→HTTPS redirect: HAProxy's job. The Go app does not handle TLS at all.
-- Trust `X-Forwarded-Proto` and `X-Forwarded-For` only when the connection's remote address matches a CIDR in `trust_proxy` (configured; loopback only by default).
-- Session cookies: `HttpOnly` and `SameSite=Lax` always. `Secure` when the request was forwarded over HTTPS (`X-Forwarded-Proto: https`).
+- Default `listen` is `0.0.0.0:9000`. Switch to `127.0.0.1:9000` when HAProxy/nginx is in front.
+- TLS is HAProxy's job; the Go app speaks plain HTTP.
+- Cookies flip `Secure` when `X-Forwarded-Proto: https` is observed.
+- WebAuthn registration **requires HTTPS** in browsers (loopback excluded). For passkey use, the dashboard must be reached via HTTPS via HAProxy.
+
+## Co-location with Headscale (installer behavior)
+
+`scripts/install.sh` detects `headscale.service` on the host and, when present:
+
+- Adds the dashboard service user to the `headscale` group (so it can read the SQLite file via group perms).
+- Installs `acl` package and applies a default ACL on `/var/lib/headscale` so the user retains rw on Headscale's WAL/SHM files even after Headscale recreates them on restart.
+- Drops a sudoers file at `/etc/sudoers.d/lss-headscale-dashboard` granting passwordless `systemctl restart headscale[.service]`.
+- Drops `/etc/systemd/system/lss-headscale-dashboard.service.d/headscale-colocation.conf` adding `/var/lib/headscale` to `ReadWritePaths` (the unit otherwise has `ProtectSystem=strict` which would block writes).
+- The unit intentionally does **not** set `NoNewPrivileges` because sudo (setuid) needs it off.
 
 ## First-run wizard (`/setup`)
 
-On boot the app reads `setup_complete` from config (and/or a flag row in SQLite). If false, all routes except `/setup`, `/healthz`, and `/static/*` redirect to `/setup`. Three steps:
-
-1. **Admin user** — username, email, password (Argon2id), forced TOTP enrollment with QR + recovery codes shown once. Must be saved before continuing.
-2. **SMTP** — host, port, username, password, from-address, TLS mode (`none` / `starttls` / `tls`). "Send test email" button. **Skippable** with a warning that password reset and 2FA recovery emails will not work; can be revisited later under `/admin/settings`.
-3. **Headscale connection** — `socket` (default) or `grpc` (remote). "Test connection" button must succeed before submit is enabled.
-
-On finish: write `config.yaml` (non-secret) + `secrets.yaml` (mode 0600, contains API key, SMTP password, session signing key), set `setup_complete=true`, redirect to `/login`.
+Step 1 only at present. Creates the admin user (Argon2id), enrolls TOTP with QR + 10 single-use recovery codes shown once. After confirmation: `setup_complete=true` is written to the dashboard's settings KV table, redirects to `/login`. SMTP and Headscale connection get configured from `/settings` after first login.
 
 ## Auth model
 
-- v1: username + email + password (Argon2id) + TOTP 2FA + single-use recovery codes.
-- Sessions: server-side store in SQLite. Cookie carries an opaque session id, never a JWT. Logout invalidates the row.
-- **Schema is designed to support multiple authenticators per user from day one** — adding WebAuthn/Yubikey later is additive, not a migration. See ROADMAP.md.
-- Login rate limit + lockout: defaults `5 attempts / 10 min` → `15 min lockout`. Configurable under `auth:` in config.
-- CSRF: on all state-changing forms.
+- Username/email + password (Argon2id) + TOTP. Recovery codes (`XXXX-XXXX-XXXX` or 12 chars) accepted in lieu of TOTP at login.
+- Server-side sessions in SQLite. Cookie carries an opaque session id; logout invalidates the row.
+- Schema (`webauthn_credentials` table) supports multiple authenticators per user from day one. Passkey **registration** ships in v1.0+; **login-via-passkey** is roadmap.
+- Login rate limit + lockout: 5 fails per 10 min → 15 min lockout (per username+IP).
+- CSRF token on every form.
 
 ## Audit log
 
-Every state change writes a row to `audit_log`: `(ts, actor_user_id, ip, action, target, details_json)`. Examples of `action`: `user.create`, `user.delete`, `node.expire`, `preauthkey.create`, `settings.update`. Read-only views do not write to the audit log. The audit log is append-only — never edit existing rows.
+`internal/audit` writes a row per state change: `(ts, actor_user_id, ip, action, target, details_json)`. Logins (success + failure), logout, password change, settings updates, Headscale CRUD, SMTP test, passkey registration, node DB edits all go through here. Audit log is append-only.
 
-## Logging conventions (IMPORTANT — fail2ban depends on this)
+## Logging conventions (fail2ban depends on this)
 
-- Use `slog.Default()` with a **text** handler (key=value pairs).
+- `slog` text handler (key=value).
 - Failed logins **must** log:
 
   ```go
   slog.Warn("auth: failed login", "user", username, "ip", remoteIP)
   ```
 
-  The fail2ban filter at `deploy/fail2ban/filter.d/lss-headscale-dashboard.conf` matches `level=WARN`, `msg="auth: failed login"`, and captures `ip=<HOST>`. **If you change this log call, update the filter in the same commit.**
-- The default backend in `deploy/fail2ban/jail.d/` is `systemd` with `journalmatch=_SYSTEMD_UNIT=lss-headscale-dashboard.service`, so logs must go to stdout/stderr (which systemd journals automatically). Do not write to a separate logfile by default.
+  The fail2ban filter at `deploy/fail2ban/filter.d/lss-headscale-dashboard.conf` matches `level=WARN`, `msg="auth: failed login"`, and captures `ip=<HOST>`. If this log line changes, update the filter regex in the same commit.
 
 ## Install / release
 
-- One-line install: `curl -fsSL https://raw.githubusercontent.com/lssolutions-ie/lss-headscale-dashboard/main/scripts/install.sh | sudo sh`. Once a release exists, the install script also accepts `LSS_VERSION=vX.Y.Z`.
-- Releases are cut by pushing a tag matching `v*.*.*`. GoReleaser builds linux/amd64 + linux/arm64 tarballs containing the binary, configs, and deploy artifacts. The install script is also uploaded as a top-level release asset.
-- Cross-compilation depends on **CGO_ENABLED=0** — do not introduce CGO dependencies.
+- Install: `curl -fsSL https://raw.githubusercontent.com/lssolutions-ie/lss-headscale-dashboard/main/scripts/install.sh | sudo sh`. Optional `LSS_VERSION=vX.Y.Z` and `LSS_PORT=N`.
+- Releases: push a tag matching `v*.*.*`. GoReleaser builds linux/amd64 + linux/arm64 tarballs and uploads `install.sh` as a top-level release asset.
+- Cross-compile depends on `CGO_ENABLED=0` — don't introduce CGO deps.
 
-## Layout (target)
+## Layout
 
 ```
-cmd/dashboard/             # main.go entry point (exists)
+cmd/dashboard/main.go              # entry point + route wiring
 internal/
-  config/                  # config.yaml load + env override
-  server/                  # router, middleware (csrf, session, ratelimit, audit, proxy-headers)
-  auth/                    # password (argon2id), totp, sessions, recovery codes
-  headscale/               # gRPC client wrapper
-    proto/                 # vendored upstream .proto + generated *.pb.go
-  setup/                   # first-run wizard handlers
-  audit/                   # audit log writer
-  views/                   # templ components (Tabler-themed)
-  db/                      # SQLite open + migrations
+  audit/                           # audit log writer
+  auth/                            # password (argon2id), totp, recovery codes,
+                                   # sessions, ratelimit + lockout, middleware
+  dashboard/                       # authenticated UI (post-login)
+    handlers.go                    # nodes / users / preauthkeys / settings / register-node
+    policy.go                      # ACL viewer + builder + raw editor
+    templates/                     # base.html + per-page html/templates
+  db/                              # dashboard's own SQLite + migrations
+  headscale/                       # REST client (Users, Nodes, PreAuthKeys, Policy)
+  headscaledb/                     # local DB editor (Headscale's SQLite)
+  login/                           # /login + /logout + per-form CSRF
+  passkey/                         # WebAuthn registration via go-webauthn
+  settings/                        # typed KV access (Headscale, HeadscaleDB, SMTP)
+  setup/                           # first-run wizard (admin user + TOTP)
+  smtp/                            # net/smtp wrapper (none / starttls / implicit-TLS)
+  users/                           # admin user creation, TOTP/recovery storage
 deploy/
-  systemd/                 # service unit (exists)
-  nginx/                   # site sample (exists)
-  fail2ban/                # filter + jail (exists)
-scripts/install.sh         # one-line installer (exists)
-static/                    # Tabler.io dist (gitignored)
-.github/workflows/         # ci.yml + release.yml (exists)
-.goreleaser.yaml           # release config (exists)
+  systemd/, nginx/, fail2ban/      # reference configs (installer applies systemd)
+scripts/install.sh                 # one-line installer
+.github/workflows/                 # ci.yml + release.yml
+.goreleaser.yaml
 ```
-
-Most `internal/*` packages are not yet implemented — the scaffold currently has only `cmd/dashboard/main.go` with stub `/healthz` and `/setup` handlers. Build them as the work needs them; do not pre-create empty packages.
 
 ## Dev commands
 
@@ -120,13 +128,14 @@ Most `internal/*` packages are not yet implemented — the scaffold currently ha
 - `make lint` — `go vet ./...`.
 - `make test` — `go test ./...`.
 - `make tidy` — `go mod tidy`.
-- `make proto` — once Headscale gRPC stubs are added (requires `protoc`).
 
 ## Things to be careful about
 
-- **Bind matches the deployment.** Default is `0.0.0.0:9000` (turnkey installer). When HAProxy/nginx is in front on the same host, switch `listen` to `127.0.0.1:9000` so the dashboard is only reachable via the proxy.
-- **Don't break the fail2ban log format.** If you change the failed-login log call, update `deploy/fail2ban/filter.d/lss-headscale-dashboard.conf` in the same change.
-- **Don't bypass the Headscale connection test** in the setup wizard. Saving an unreachable config bricks the dashboard.
-- **Don't commit secrets.** API keys, SMTP passwords, and session signing keys live in `secrets.yaml` (mode 0600), written at runtime by the wizard. `config.yaml` and `secrets.yaml` are both gitignored.
-- **Don't introduce CGO.** SQLite via `modernc.org/sqlite`, no `mattn/go-sqlite3`. Cross-compile in CI depends on this.
-- **Don't pre-create empty packages.** Add `internal/*` directories only when they hold real code.
+- **`tags` is a SQLite reserved word.** When SELECT-ing from Headscale's `nodes` table, quote it as `"tags"`. UPDATE doesn't need the quotes.
+- **Tabler dropdowns inside `.table-responsive`** are clipped by the card's `overflow: hidden`. Use the `.allow-overflow` class on the card and `data-bs-strategy="fixed"` on the toggle.
+- **html/template `slice` panics** on out-of-range. Don't write `{{slice .Foo 0 12}}`; use the `{{truncate .Foo 12}}` helper or guard with `{{if ge (len .Foo) 12}}`.
+- **Node ID changes** are safe in Headscale 0.28+ (no FK references to nodes.id; routes are stored inline as `approved_routes` text). Always restart Headscale after.
+- **Headscale `server_url`** (the URL Tailscale clients use) usually differs from the API URL the dashboard talks to. Stored separately as `Headscale.ClientURL`. Used in the Register Node command.
+- **Don't break the fail2ban log format.** If you change the failed-login slog line, update `deploy/fail2ban/filter.d/...conf` in the same change.
+- **Don't introduce CGO.** SQLite via `modernc.org/sqlite`. Cross-compile in CI depends on this.
+- **Always restart Headscale after a direct-DB write.** The `restart_after` checkbox in the Edit modal handles this; the wait/spinner page (`/nodes/wait`) polls `/headscale/ready` until the API answers.
