@@ -31,7 +31,12 @@ type Handler struct {
 // New initializes the login handler. base is the layout template (e.g. dashboard's base.html)
 // that defines the "base" template referenced by login.html.
 func New(d *sql.DB, log *slog.Logger, baseFS embed.FS, basePattern string) (*Handler, error) {
-	t := template.New("login")
+	// The dashboard's other templates also live in baseFS and reference helper
+	// funcs like `contains`; register them so ParseFS doesn't reject them.
+	t := template.New("login").Funcs(template.FuncMap{
+		"contains":  strings.Contains,
+		"hasPrefix": strings.HasPrefix,
+	})
 	if _, err := t.ParseFS(baseFS, basePattern); err != nil {
 		return nil, err
 	}
