@@ -126,7 +126,9 @@ $SUPP_GROUPS_LINE
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
-    systemctl enable --now lss-headscale-dashboard.service
+    systemctl enable lss-headscale-dashboard.service
+    # Use restart (not start) so re-runs reload the new binary on upgrade.
+    systemctl restart lss-headscale-dashboard.service
 }
 
 # Remove an nginx site that previous installers (v0.1.2) wrote.
