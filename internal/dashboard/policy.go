@@ -81,6 +81,11 @@ func (h *Handler) policyShow(w http.ResponseWriter, r *http.Request) {
 		RawPolicy string
 		UpdatedAt string
 		Parsed    *ParsedPolicy
+		// Chip choices for the builder forms.
+		Actors  []string // groups + tags + users + hosts + "*"  → for src/dst
+		Members []string // users + groups                        → for group members + tag owners
+		Tags    []string // existing tag:* names from tagOwners
+		Groups  []string // existing group:* names
 	}
 	pd := pageData{basePage: bp}
 	c, errStr := h.headscaleClient(r.Context())
@@ -99,7 +104,64 @@ func (h *Handler) policyShow(w http.ResponseWriter, r *http.Request) {
 		pd.UpdatedAt = pol.UpdatedAt
 		pd.Parsed = parsePolicy(pol.Policy)
 	}
+	users, _ := c.ListUsers(ctx)
+	pd.Actors, pd.Members, pd.Tags, pd.Groups = buildPolicyChoices(pd.Parsed, users)
 	h.render(w, "policy.html", pd)
+}
+
+// buildPolicyChoices returns sorted chip-selectable values for the builder.
+//   actors: groups + tags + hosts + users + "*"  (valid in src/dst)
+//   members: users + groups                       (valid in group members / tagOwners owners)
+//   tags: existing tag:* keys from tagOwners
+//   groups: existing group:* keys
+func buildPolicyChoices(p *ParsedPolicy, users []headscale.User) (actors, members, tags, groups []string) {
+	actors = []string{"*"}
+	if p != nil {
+		for g := range p.Groups {
+			groups = append(groups, g)
+			actors = append(actors, g)
+			members = append(members, g)
+		}
+		for t := range p.TagOwners {
+			tags = append(tags, t)
+			actors = append(actors, t)
+		}
+		for h := range p.Hosts {
+			actors = append(actors, h)
+		}
+	}
+	for _, u := range users {
+		if u.Name == "" {
+			continue
+		}
+		actors = append(actors, u.Name)
+		members = append(members, u.Name)
+	}
+	sortStrings(&actors)
+	sortStrings(&members)
+	sortStrings(&tags)
+	sortStrings(&groups)
+	return
+}
+
+func sortStrings(s *[]string) {
+	// stable + dedupe
+	seen := map[string]bool{}
+	out := (*s)[:0]
+	for _, v := range *s {
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	*s = out
+	for i := 0; i < len(*s); i++ {
+		for j := i + 1; j < len(*s); j++ {
+			if (*s)[j] < (*s)[i] {
+				(*s)[i], (*s)[j] = (*s)[j], (*s)[i]
+			}
+		}
+	}
 }
 
 func (h *Handler) policySaveRaw(w http.ResponseWriter, r *http.Request) {
@@ -167,11 +229,16 @@ func (h *Handler) policyAddRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	src := splitCSV(r.FormValue("src"))
-	dst := splitCSV(r.FormValue("dst"))
-	if len(src) == 0 || len(dst) == 0 {
-		setFlash(w, "danger", "Both source(s) and destination(s) are required.")
+	dstHosts := splitCSV(r.FormValue("dst_hosts"))
+	port := strings.TrimSpace(r.FormValue("dst_port"))
+	if len(src) == 0 || len(dstHosts) == 0 || port == "" {
+		setFlash(w, "danger", "Source(s), destination(s), and port are required.")
 		http.Redirect(w, r, "/policy", http.StatusSeeOther)
 		return
+	}
+	dst := make([]string, 0, len(dstHosts))
+	for _, hst := range dstHosts {
+		dst = append(dst, hst+":"+port)
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()

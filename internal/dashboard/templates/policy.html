@@ -26,16 +26,32 @@
                         <div class="card">
                             <div class="card-header"><h3 class="card-title">Add ACL rule</h3></div>
                             <div class="card-body">
-                                <form method="post" action="/policy/rules/add">
+                                <form method="post" action="/policy/rules/add" data-chips>
                                     <input type="hidden" name="csrf" value="{{.CSRF}}">
-                                    <div class="mb-2"><label class="form-label">Sources <small class="text-muted">(comma-separated)</small></label>
-                                        <input type="text" name="src" class="form-control" placeholder="group:admin, tag:laptop, *" required>
+                                    <label class="form-label">Sources</label>
+                                    <div class="chip-pad" data-input="#rule-src">
+                                        {{range .Actors}}<button type="button" class="btn btn-sm btn-outline-primary chip" data-value="{{.}}">{{.}}</button>{{end}}
                                     </div>
-                                    <div class="mb-2"><label class="form-label">Destinations <small class="text-muted">(host:port,host:port)</small></label>
-                                        <input type="text" name="dst" class="form-control" placeholder="tag:server:22,80,443" required>
+                                    <input type="hidden" name="src" id="rule-src" required>
+
+                                    <label class="form-label mt-3">Destination hosts</label>
+                                    <div class="chip-pad" data-input="#rule-dst-hosts">
+                                        {{range .Actors}}<button type="button" class="btn btn-sm btn-outline-primary chip" data-value="{{.}}">{{.}}</button>{{end}}
                                     </div>
-                                    <small class="form-hint">Action defaults to <code>accept</code> (the only action Headscale supports).
-                                    Multiple destinations: comma-separated. Each must include a port spec (use <code>*</code> for any port).</small>
+                                    <input type="hidden" name="dst_hosts" id="rule-dst-hosts" required>
+
+                                    <label class="form-label mt-3">Port</label>
+                                    <div class="d-flex gap-2 align-items-center">
+                                        <input type="text" name="dst_port" class="form-control" placeholder="* | 22 | 22,80,443" required style="max-width: 220px">
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <button type="button" class="btn btn-outline-secondary" data-port="*">*</button>
+                                            <button type="button" class="btn btn-outline-secondary" data-port="22">22</button>
+                                            <button type="button" class="btn btn-outline-secondary" data-port="80,443">80,443</button>
+                                            <button type="button" class="btn btn-outline-secondary" data-port="443">443</button>
+                                        </div>
+                                    </div>
+
+                                    <small class="form-hint d-block mt-2">Action is always <code>accept</code> (Headscale only supports allow rules). One rule per port set; for different ports per host, add multiple rules.</small>
                                     <button class="btn btn-primary mt-3">Append rule</button>
                                 </form>
                             </div>
@@ -46,14 +62,16 @@
                         <div class="card">
                             <div class="card-header"><h3 class="card-title">Add group</h3></div>
                             <div class="card-body">
-                                <form method="post" action="/policy/groups/add">
+                                <form method="post" action="/policy/groups/add" data-chips>
                                     <input type="hidden" name="csrf" value="{{.CSRF}}">
                                     <div class="mb-2"><label class="form-label">Group name <small class="text-muted">(must start with <code>group:</code>)</small></label>
                                         <input type="text" name="name" class="form-control" placeholder="group:admin" required>
                                     </div>
-                                    <div class="mb-2"><label class="form-label">Members <small class="text-muted">(comma-separated usernames)</small></label>
-                                        <input type="text" name="members" class="form-control" placeholder="alice, bob" required>
+                                    <label class="form-label">Members</label>
+                                    <div class="chip-pad" data-input="#group-members">
+                                        {{range .Members}}<button type="button" class="btn btn-sm btn-outline-primary chip" data-value="{{.}}">{{.}}</button>{{end}}
                                     </div>
+                                    <input type="hidden" name="members" id="group-members" required>
                                     <button class="btn btn-primary mt-3">Add group</button>
                                 </form>
                             </div>
@@ -64,14 +82,17 @@
                         <div class="card">
                             <div class="card-header"><h3 class="card-title">Add tag owner</h3></div>
                             <div class="card-body">
-                                <form method="post" action="/policy/tagowners/add">
+                                <form method="post" action="/policy/tagowners/add" data-chips>
                                     <input type="hidden" name="csrf" value="{{.CSRF}}">
                                     <div class="mb-2"><label class="form-label">Tag <small class="text-muted">(must start with <code>tag:</code>)</small></label>
-                                        <input type="text" name="tag" class="form-control" placeholder="tag:server" required>
+                                        <input type="text" name="tag" class="form-control" placeholder="tag:server" list="known-tags" required>
+                                        {{if .Tags}}<datalist id="known-tags">{{range .Tags}}<option value="{{.}}">{{end}}</datalist>{{end}}
                                     </div>
-                                    <div class="mb-2"><label class="form-label">Owners <small class="text-muted">(users or groups, comma-separated)</small></label>
-                                        <input type="text" name="owners" class="form-control" placeholder="group:admin" required>
+                                    <label class="form-label">Owners</label>
+                                    <div class="chip-pad" data-input="#tag-owners">
+                                        {{range .Members}}<button type="button" class="btn btn-sm btn-outline-primary chip" data-value="{{.}}">{{.}}</button>{{end}}
                                     </div>
+                                    <input type="hidden" name="owners" id="tag-owners" required>
                                     <button class="btn btn-primary mt-3">Add tag owner</button>
                                 </form>
                             </div>
@@ -80,6 +101,42 @@
 
                 </div>
             </div>
+
+            <script>
+            // Generic chip-pad: each .chip-pad has data-input="<selector>" pointing to the
+            // hidden input that holds the comma-separated selected values.
+            (function () {
+                document.querySelectorAll('.chip-pad').forEach(pad => {
+                    const input = document.querySelector(pad.dataset.input);
+                    if (!input) return;
+                    const refresh = () => {
+                        const have = (input.value || '').split(',').map(s => s.trim()).filter(Boolean);
+                        pad.querySelectorAll('.chip').forEach(b => {
+                            const on = have.includes(b.dataset.value);
+                            b.classList.toggle('btn-primary', on);
+                            b.classList.toggle('btn-outline-primary', !on);
+                        });
+                    };
+                    pad.querySelectorAll('.chip').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            let have = (input.value || '').split(',').map(s => s.trim()).filter(Boolean);
+                            const i = have.indexOf(btn.dataset.value);
+                            if (i >= 0) have.splice(i, 1); else have.push(btn.dataset.value);
+                            input.value = have.join(', ');
+                            refresh();
+                        });
+                    });
+                    refresh();
+                });
+                // Quick-port presets on the rule form.
+                document.querySelectorAll('[data-port]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const inp = btn.closest('form').querySelector('[name="dst_port"]');
+                        if (inp) inp.value = btn.dataset.port;
+                    });
+                });
+            })();
+            </script>
 
             <!-- Structured view -->
             <div class="tab-pane" id="tab-viewer">
