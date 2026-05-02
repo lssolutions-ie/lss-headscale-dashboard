@@ -1,0 +1,56 @@
+version: 2
+project_name: lss-headscale-dashboard
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: dashboard
+    main: ./cmd/dashboard
+    binary: lss-headscale-dashboard
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+
+archives:
+  - id: tarball
+    format: tar.gz
+    name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}'
+    files:
+      - LICENSE*
+      - README.md
+      - ROADMAP.md
+      - config.example.yaml
+      - deploy/**/*
+      - scripts/install.sh
+
+checksum:
+  name_template: 'checksums.txt'
+
+release:
+  github:
+    owner: lssolutions-ie
+    name: lss-headscale-dashboard
+  # Upload install.sh as a top-level release asset so the curl|sh URL is stable.
+  extra_files:
+    - glob: scripts/install.sh
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-next'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'

@@ -1,0 +1,23 @@
+[Unit]
+Description=LSS Headscale Dashboard
+After=network.target headscale.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=lss-dashboard
+Group=lss-dashboard
+ExecStart=/usr/local/bin/lss-headscale-dashboard --config /etc/lss-headscale-dashboard/config.yaml
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=/var/lib/lss-headscale-dashboard
+# Required to read Headscale's unix socket when running on the same host.
+SupplementaryGroups=headscale
+
+[Install]
+WantedBy=multi-user.target

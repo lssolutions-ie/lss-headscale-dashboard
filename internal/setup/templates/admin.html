@@ -1,0 +1,28 @@
+{{define "title"}}Setup — Admin user{{end}}
+{{define "content"}}
+<div class="step">Step 1 of 3 · Admin user</div>
+<h1>Create your admin account</h1>
+<p>This is a one-time setup. The first user becomes the dashboard admin.</p>
+
+{{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+
+<form method="post" action="/setup">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+
+    <label for="username">Username</label>
+    <input id="username" name="username" type="text" required autocomplete="username"
+           value="{{.Form.Username}}" minlength="3" maxlength="64">
+
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" required autocomplete="email"
+           value="{{.Form.Email}}">
+
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required autocomplete="new-password" minlength="12">
+
+    <label for="password_confirm">Confirm password</label>
+    <input id="password_confirm" name="password_confirm" type="password" required autocomplete="new-password" minlength="12">
+
+    <button type="submit">Create admin →</button>
+</form>
+{{end}}

@@ -1,0 +1,15 @@
+/bin/
+/dist/
+/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+config.yaml
+secrets.yaml
+.env
+.idea/
+.vscode/
+
+# Tabler.io dist (fetched at install time — see README)
+/static/tabler/

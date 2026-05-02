@@ -1,0 +1,12 @@
+{{define "title"}}Setup complete{{end}}
+{{define "content"}}
+<div class="step">Setup complete</div>
+<h1>You're all set</h1>
+<p>Admin account <strong>{{.Username}}</strong> is ready with TOTP enabled.</p>
+
+<div class="warn">
+    <strong>Coming in upcoming releases:</strong> wizard steps for SMTP and Headscale connection,
+    plus the login screen and dashboard. For now, the service is up — see
+    <code>journalctl -u lss-headscale-dashboard</code> for logs.
+</div>
+{{end}}

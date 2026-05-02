@@ -1,0 +1,43 @@
+# LSS Headscale Dashboard configuration.
+# The first-run wizard at /setup writes the runtime values to /etc/lss-headscale-dashboard/config.yaml.
+# This file documents the full schema.
+
+listen: 127.0.0.1:9000
+data_dir: /var/lib/lss-headscale-dashboard
+log_level: info
+
+# The setup_complete flag and Headscale/SMTP runtime config live in the SQLite
+# DB at <data_dir>/dashboard.db, written by the first-run wizard at /setup.
+# This file holds only operator-facing settings.
+
+headscale:
+  # mode: socket | grpc
+  mode: socket
+  socket_path: /var/run/headscale/headscale.sock
+  # For mode: grpc
+  # address: headscale.example.com:50443
+  # tls: true
+  # api_key: ""   # written by the wizard, never committed
+
+smtp:
+  enabled: false
+  # host: smtp.example.com
+  # port: 587
+  # username: ""
+  # password: ""    # written by the wizard
+  # from: noreply@example.com
+  # tls: starttls   # none | starttls | tls
+
+session:
+  cookie_name: lss_session
+  # Secure flag is set automatically when X-Forwarded-Proto: https is observed.
+
+# CIDRs allowed to set X-Forwarded-* headers. HAProxy/NGINX should always be on loopback.
+trust_proxy:
+  - 127.0.0.1/32
+
+# Login throttling.
+auth:
+  max_attempts: 5
+  window: 10m
+  lockout: 15m
