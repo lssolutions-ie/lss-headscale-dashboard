@@ -74,20 +74,21 @@ func (h *Handler) RegisterPolicyRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /policy/tagowners/add", h.policyAddTagOwner)
 }
 
+type policyPageData struct {
+	basePage
+	RawPolicy string
+	UpdatedAt string
+	Parsed    *ParsedPolicy
+	ActiveTab string
+	Actors    []string
+	Members   []string
+	Tags      []string
+	Groups    []string
+}
+
 func (h *Handler) policyShow(w http.ResponseWriter, r *http.Request) {
 	bp := h.loadBase(w, r, "policy")
-	type pageData struct {
-		basePage
-		RawPolicy string
-		UpdatedAt string
-		Parsed    *ParsedPolicy
-		// Chip choices for the builder forms.
-		Actors  []string // groups + tags + users + hosts + "*"  → for src/dst
-		Members []string // users + groups                        → for group members + tag owners
-		Tags    []string // existing tag:* names from tagOwners
-		Groups  []string // existing group:* names
-	}
-	pd := pageData{basePage: bp}
+	pd := policyPageData{basePage: bp}
 	c, errStr := h.headscaleClient(r.Context())
 	if c == nil {
 		pd.HeadscaleError = errStr
@@ -179,11 +180,24 @@ func (h *Handler) policySaveRaw(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()
 	if err := c.SetPolicy(ctx, body); err != nil {
-		setFlash(w, "danger", "Save failed: "+err.Error())
-	} else {
-		audit.Write(h.db, actorID(r), currentIP(r), audit.ActionSettingsUpdate, "policy", nil)
-		setFlash(w, "success", "Policy saved.")
+		// Headscale rejected the policy. Re-render the page on the Raw tab
+		// with the user's submitted text intact so they can fix it in place.
+		bp := h.loadBase(w, r, "policy")
+		pd := policyPageData{basePage: bp, RawPolicy: body, ActiveTab: "raw"}
+		pd.Flash = &flash{Kind: "danger", Message: "Headscale rejected the policy: " + err.Error()}
+		// Still populate Actors/Members/etc. from the currently-saved policy
+		// so the Builder tab keeps working if the user clicks over.
+		if pol, err2 := c.GetPolicy(ctx); err2 == nil {
+			pd.Parsed = parsePolicy(pol.Policy)
+			pd.UpdatedAt = pol.UpdatedAt
+		}
+		users, _ := c.ListUsers(ctx)
+		pd.Actors, pd.Members, pd.Tags, pd.Groups = buildPolicyChoices(pd.Parsed, users)
+		h.render(w, "policy.html", pd)
+		return
 	}
+	audit.Write(h.db, actorID(r), currentIP(r), audit.ActionSettingsUpdate, "policy", nil)
+	setFlash(w, "success", "Policy saved.")
 	http.Redirect(w, r, "/policy", http.StatusSeeOther)
 }
 
