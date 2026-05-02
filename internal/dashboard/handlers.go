@@ -474,6 +474,11 @@ func (h *Handler) nodesRegister(w http.ResponseWriter, r *http.Request) {
 		SSH:               r.FormValue("ssh") == "on",
 		Operator:          strings.TrimSpace(r.FormValue("operator")),
 		Timeout:           strings.TrimSpace(r.FormValue("timeout")),
+		Nickname:          strings.TrimSpace(r.FormValue("nickname")),
+		NetfilterMode:     strings.TrimSpace(r.FormValue("netfilter_mode")),
+		SNATSubnetRoutes:  strings.TrimSpace(r.FormValue("snat_subnet_routes")),
+		StatefulFiltering: strings.TrimSpace(r.FormValue("stateful_filtering")),
+		AcceptRisk:        strings.TrimSpace(r.FormValue("accept_risk")),
 	})
 	audit.Write(h.db, actorID(r), currentIP(r), audit.ActionPreAuthKeyCreate, user, map[string]any{
 		"reusable": reusable, "ephemeral": ephemeral, "tags": tags, "via": "register-node",
@@ -482,23 +487,28 @@ func (h *Handler) nodesRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 type registerOpts struct {
-	LoginServer       string
-	Key               string
-	Hostname          string
-	Tags              []string
-	AcceptDNS         string // "" | "true" | "false"
-	AcceptRoutes      string
-	AdvertiseExitNode bool
-	AdvertiseRoutes   string
-	ExitNode          string
-	ExitNodeLAN       bool
-	Reset             bool
-	ForceReauth       bool
-	Unattended        bool
-	ShieldsUp         bool
-	SSH               bool
-	Operator          string
-	Timeout           string
+	LoginServer        string
+	Key                string
+	Hostname           string
+	Nickname           string
+	Tags               []string
+	AcceptDNS          string // "" | "true" | "false"
+	AcceptRoutes       string
+	AdvertiseExitNode  bool
+	AdvertiseRoutes    string
+	ExitNode           string
+	ExitNodeLAN        bool
+	Reset              bool
+	ForceReauth        bool
+	Unattended         bool
+	ShieldsUp          bool
+	SSH                bool
+	Operator           string
+	Timeout            string
+	NetfilterMode      string // "" | "on" | "off" | "nodivert"
+	SNATSubnetRoutes   string // "" | "true" | "false"
+	StatefulFiltering  string // "" | "true" | "false"
+	AcceptRisk         string // e.g. "lose-ssh" or "all"
 }
 
 func buildRegisterCommand(o registerOpts) string {
@@ -509,6 +519,9 @@ func buildRegisterCommand(o registerOpts) string {
 	}
 	if o.Hostname != "" {
 		parts = append(parts, "  --hostname="+shellArg(o.Hostname))
+	}
+	if o.Nickname != "" {
+		parts = append(parts, "  --nickname="+shellArg(o.Nickname))
 	}
 	if len(o.Tags) > 0 {
 		parts = append(parts, "  --advertise-tags="+strings.Join(o.Tags, ","))
@@ -551,6 +564,18 @@ func buildRegisterCommand(o registerOpts) string {
 	}
 	if o.Timeout != "" {
 		parts = append(parts, "  --timeout="+o.Timeout)
+	}
+	if o.NetfilterMode != "" {
+		parts = append(parts, "  --netfilter-mode="+o.NetfilterMode)
+	}
+	if o.SNATSubnetRoutes != "" {
+		parts = append(parts, "  --snat-subnet-routes="+o.SNATSubnetRoutes)
+	}
+	if o.StatefulFiltering != "" {
+		parts = append(parts, "  --stateful-filtering="+o.StatefulFiltering)
+	}
+	if o.AcceptRisk != "" {
+		parts = append(parts, "  --accept-risk="+o.AcceptRisk)
 	}
 	return strings.Join(parts, " \\\n")
 }
