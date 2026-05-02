@@ -25,11 +25,13 @@ Then open <http://127.0.0.1:9000/setup> on the host (or via SSH tunnel) and walk
 
 ## Topology
 
+The default install binds the dashboard to `0.0.0.0:9000`, so it's directly reachable at `http://<server-ip>:9000` once the installer finishes. When you're ready to put HAProxy in front for TLS:
+
 ```
-Internet → HAProxy (TLS) → NGINX (HTTP :80) → 127.0.0.1:9000 (Go app) → Headscale gRPC
+Internet → HAProxy (TLS) → :9000 (Go app, switch to 127.0.0.1:9000) → Headscale gRPC
 ```
 
-The dashboard binds to loopback only. HAProxy and NGINX configs live under `deploy/`.
+Change `listen` in `/etc/lss-headscale-dashboard/config.yaml` to `127.0.0.1:9000` and restart the service. Sample nginx and systemd configs live under `deploy/`.
 
 ## Tabler.io assets
 

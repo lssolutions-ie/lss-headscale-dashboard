@@ -2,7 +2,10 @@
 # The first-run wizard at /setup writes the runtime values to /etc/lss-headscale-dashboard/config.yaml.
 # This file documents the full schema.
 
-listen: 127.0.0.1:9000
+# Default: bind directly to all interfaces on port 9000.
+# When putting HAProxy/nginx in front on the same host, change to 127.0.0.1:9000
+# so the dashboard isn't reachable except via the proxy.
+listen: 0.0.0.0:9000
 data_dir: /var/lib/lss-headscale-dashboard
 log_level: info
 

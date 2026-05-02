@@ -3,15 +3,15 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/lssolutions-ie/lss-headscale-dashboard/main/scripts/install.sh | sudo sh
 #
-# After this script finishes, the dashboard is reachable at http://<server-ip>/setup.
-# It installs and configures everything on this host: binary, systemd unit,
-# nginx reverse proxy, optional fail2ban filter, and opens UFW port 80 if active.
+# After this script finishes, the dashboard is reachable at http://<server-ip>:9000/setup.
+# The Go app binds directly to 0.0.0.0:9000. If you put HAProxy/nginx in front,
+# change `listen` in /etc/lss-headscale-dashboard/config.yaml to 127.0.0.1:9000.
 #
 # Environment overrides:
-#   LSS_VERSION     release tag to install   (default: latest)
-#   LSS_PREFIX      binary install prefix    (default: /usr/local/bin)
-#   LSS_USER        service user             (default: lss-dashboard)
-#   LSS_NO_NGINX=1  skip nginx install (you'll need your own reverse proxy)
+#   LSS_VERSION  release tag to install (default: latest)
+#   LSS_PREFIX   binary install prefix  (default: /usr/local/bin)
+#   LSS_USER     service user           (default: lss-dashboard)
+#   LSS_PORT     port to bind on        (default: 9000)
 
 set -eu
 
@@ -19,10 +19,10 @@ REPO="lssolutions-ie/lss-headscale-dashboard"
 VERSION="${LSS_VERSION:-latest}"
 PREFIX="${LSS_PREFIX:-/usr/local/bin}"
 SVC_USER="${LSS_USER:-lss-dashboard}"
+PORT="${LSS_PORT:-9000}"
 CONF_DIR="/etc/lss-headscale-dashboard"
 DATA_DIR="/var/lib/lss-headscale-dashboard"
 UNIT="/etc/systemd/system/lss-headscale-dashboard.service"
-NGINX_SITE="/etc/nginx/sites-available/lss-headscale-dashboard"
 
 require_root() {
     if [ "$(id -u)" -ne 0 ]; then
@@ -77,15 +77,25 @@ install_binary() {
     tar -xzf "$TMP/release.tar.gz" -C "$TMP"
     install -m 0755 "$TMP/lss-headscale-dashboard" "$PREFIX/lss-headscale-dashboard"
     mkdir -p "$CONF_DIR" "$DATA_DIR"
-    if [ ! -f "$CONF_DIR/config.yaml" ] && [ -f "$TMP/config.example.yaml" ]; then
-        install -m 0640 "$TMP/config.example.yaml" "$CONF_DIR/config.yaml"
-    fi
+    write_config
     chown -R "$SVC_USER":"$SVC_USER" "$DATA_DIR" "$CONF_DIR"
 }
 
+# Install-script-owned config.yaml. Schema is documented in config.example.yaml.
+# Existing config is preserved (idempotent).
+write_config() {
+    if [ -f "$CONF_DIR/config.yaml" ]; then
+        return
+    fi
+    cat >"$CONF_DIR/config.yaml" <<EOF
+listen: 0.0.0.0:$PORT
+data_dir: $DATA_DIR
+log_level: info
+EOF
+    chmod 0640 "$CONF_DIR/config.yaml"
+}
+
 install_systemd() {
-    # Only set SupplementaryGroups=headscale when the headscale group exists,
-    # otherwise systemd refuses to start the unit (status=216/GROUP).
     SUPP_GROUPS_LINE=""
     if getent group headscale >/dev/null 2>&1; then
         SUPP_GROUPS_LINE="SupplementaryGroups=headscale"
@@ -119,62 +129,28 @@ EOF
     systemctl enable --now lss-headscale-dashboard.service
 }
 
-install_nginx() {
-    if [ "${LSS_NO_NGINX:-}" = "1" ]; then
-        echo "  · LSS_NO_NGINX=1, skipping nginx setup"
-        return
+# Remove an nginx site that previous installers (v0.1.2) wrote.
+# We do not uninstall nginx itself — leaving it installed is harmless.
+cleanup_old_nginx_site() {
+    SITE_AVAIL=/etc/nginx/sites-available/lss-headscale-dashboard
+    SITE_ENABLED=/etc/nginx/sites-enabled/lss-headscale-dashboard
+    if [ -e "$SITE_AVAIL" ] || [ -L "$SITE_ENABLED" ]; then
+        echo "  · removing old nginx site (dashboard now binds :$PORT directly)"
+        rm -f "$SITE_AVAIL" "$SITE_ENABLED"
+        # Restore Ubuntu's default site if it was disabled by the old installer.
+        if [ -f /etc/nginx/sites-available/default ] && [ ! -L /etc/nginx/sites-enabled/default ]; then
+            ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+        fi
+        if command -v nginx >/dev/null 2>&1; then
+            nginx -t >/dev/null 2>&1 && systemctl reload nginx 2>/dev/null || true
+        fi
     fi
-
-    if ! command -v nginx >/dev/null 2>&1; then
-        echo "  · installing nginx"
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update -qq
-        apt-get install -y -qq nginx >/dev/null
-    fi
-
-    cat >"$NGINX_SITE" <<EOF
-# Managed by lss-headscale-dashboard installer. Edits will be overwritten on re-install.
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-
-    location /static/ {
-        alias $DATA_DIR/static/;
-        access_log off;
-        expires 7d;
-    }
-
-    location / {
-        proxy_pass http://127.0.0.1:9000;
-        proxy_set_header Host              \$host;
-        proxy_set_header X-Real-IP         \$remote_addr;
-        proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$http_x_forwarded_proto;
-        proxy_read_timeout 60s;
-    }
-}
-EOF
-    ln -sf "$NGINX_SITE" /etc/nginx/sites-enabled/lss-headscale-dashboard
-
-    # Drop Ubuntu's stock default site if present so our default_server captures :80.
-    if [ -L /etc/nginx/sites-enabled/default ]; then
-        rm /etc/nginx/sites-enabled/default
-    fi
-
-    if ! nginx -t 2>&1 | tail -2 | grep -q 'successful'; then
-        echo "error: nginx config test failed" >&2
-        nginx -t >&2 || true
-        exit 1
-    fi
-    systemctl enable nginx >/dev/null 2>&1 || true
-    systemctl reload nginx 2>/dev/null || systemctl restart nginx
 }
 
 open_firewall() {
     if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | head -1 | grep -q "Status: active"; then
-        echo "  · ufw is active, allowing 80/tcp"
-        ufw allow 80/tcp >/dev/null
+        echo "  · ufw is active, allowing $PORT/tcp"
+        ufw allow "$PORT/tcp" >/dev/null
     fi
 }
 
@@ -193,7 +169,6 @@ install_fail2ban() {
     echo "  · fail2ban filter installed"
 }
 
-# Detect the IP a remote client on the LAN would use to reach this host.
 detect_lan_ip() {
     LAN_IP="$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {for (i=1; i<=NF; i++) if ($i=="src") print $(i+1); exit}')"
     if [ -z "$LAN_IP" ]; then
@@ -203,13 +178,8 @@ detect_lan_ip() {
     echo "$LAN_IP"
 }
 
-# Poll http://127.0.0.1/setup (through nginx) until the wizard responds.
-# If anything along the chain is broken, dump logs and exit non-zero.
 health_check() {
-    URL="http://127.0.0.1/setup"
-    if [ "${LSS_NO_NGINX:-}" = "1" ]; then
-        URL="http://127.0.0.1:9000/setup"
-    fi
+    URL="http://127.0.0.1:$PORT/setup"
     echo "  · waiting for dashboard at $URL"
     i=0
     while [ $i -lt 15 ]; do
@@ -227,10 +197,6 @@ health_check() {
     systemctl status lss-headscale-dashboard --no-pager -l 2>&1 | head -15 >&2 || true
     echo "--- recent logs ---" >&2
     journalctl -u lss-headscale-dashboard --no-pager -n 20 2>&1 >&2 || true
-    if command -v nginx >/dev/null 2>&1; then
-        echo "--- nginx -t ---" >&2
-        nginx -t 2>&1 | head -5 >&2 || true
-    fi
     exit 1
 }
 
@@ -240,7 +206,7 @@ echo "Installing LSS Headscale Dashboard $VERSION"
 ensure_user
 install_binary
 install_systemd
-install_nginx
+cleanup_old_nginx_site
 open_firewall
 install_fail2ban
 health_check
@@ -250,7 +216,7 @@ cat <<EOF
 
 LSS Headscale Dashboard $VERSION is up.
 
-  Open: http://$LAN_IP/setup
+  Open: http://$LAN_IP:$PORT/setup
 
   Service:  systemctl status lss-headscale-dashboard
   Logs:     journalctl -u lss-headscale-dashboard -f

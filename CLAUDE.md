@@ -35,11 +35,14 @@ gRPC. Two modes, picked by the user in the setup wizard and persisted in `config
 ## Deploy topology
 
 ```
-Internet → HAProxy (TLS termination) → NGINX (HTTP :80) → 127.0.0.1:9000 (Go app)
-                                                         → Headscale gRPC (socket or remote)
+Default install (no proxy on the host):
+    Internet → :9000 (Go app, 0.0.0.0:9000) → Headscale gRPC
+
+Production (HAProxy on the perimeter):
+    Internet → HAProxy (TLS) → :9000 (Go app, set to 127.0.0.1) → Headscale gRPC
 ```
 
-- The Go server **must bind to `127.0.0.1` only**. Do not introduce a `0.0.0.0` listener — HAProxy/NGINX in front is the only ingress path.
+- Default `listen` is `0.0.0.0:9000` so the installer's `curl|sh` produces a directly-reachable dashboard. When HAProxy/nginx is added on the same host, change `listen` in `config.yaml` to `127.0.0.1:9000` so the dashboard is only reachable via the proxy. `deploy/nginx/lss-headscale-dashboard.conf` is reference config for that scenario; the installer does not enable it.
 - TLS, HSTS, HTTP→HTTPS redirect: HAProxy's job. The Go app does not handle TLS at all.
 - Trust `X-Forwarded-Proto` and `X-Forwarded-For` only when the connection's remote address matches a CIDR in `trust_proxy` (configured; loopback only by default).
 - Session cookies: `HttpOnly` and `SameSite=Lax` always. `Secure` when the request was forwarded over HTTPS (`X-Forwarded-Proto: https`).
@@ -121,7 +124,7 @@ Most `internal/*` packages are not yet implemented — the scaffold currently ha
 
 ## Things to be careful about
 
-- **Don't break the loopback bind.** The dashboard must never listen on `0.0.0.0`. NGINX/HAProxy in front is the only ingress.
+- **Bind matches the deployment.** Default is `0.0.0.0:9000` (turnkey installer). When HAProxy/nginx is in front on the same host, switch `listen` to `127.0.0.1:9000` so the dashboard is only reachable via the proxy.
 - **Don't break the fail2ban log format.** If you change the failed-login log call, update `deploy/fail2ban/filter.d/lss-headscale-dashboard.conf` in the same change.
 - **Don't bypass the Headscale connection test** in the setup wizard. Saving an unreachable config bricks the dashboard.
 - **Don't commit secrets.** API keys, SMTP passwords, and session signing keys live in `secrets.yaml` (mode 0600), written at runtime by the wizard. `config.yaml` and `secrets.yaml` are both gitignored.

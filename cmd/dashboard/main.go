@@ -32,7 +32,7 @@ type Config struct {
 
 func defaultConfig() Config {
 	return Config{
-		Listen:   "127.0.0.1:9000",
+		Listen:   "0.0.0.0:9000",
 		DataDir:  "/var/lib/lss-headscale-dashboard",
 		LogLevel: "info",
 	}
