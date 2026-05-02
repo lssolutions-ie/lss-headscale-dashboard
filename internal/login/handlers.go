@@ -36,6 +36,12 @@ func New(d *sql.DB, log *slog.Logger, baseFS embed.FS, basePattern string) (*Han
 	t := template.New("login").Funcs(template.FuncMap{
 		"contains":  strings.Contains,
 		"hasPrefix": strings.HasPrefix,
+		"truncate": func(s string, n int) string {
+			if len(s) <= n {
+				return s
+			}
+			return s[:n] + "…"
+		},
 	})
 	if _, err := t.ParseFS(baseFS, basePattern); err != nil {
 		return nil, err

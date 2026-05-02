@@ -34,7 +34,7 @@
             <tbody>
             {{range .Keys}}
                 <tr>
-                    <td><code>{{slice .Key 0 12}}…</code></td>
+                    <td><code>{{truncate .Key 12}}</code></td>
                     <td>{{.User.Name}}</td>
                     <td>{{if .Reusable}}yes{{else}}no{{end}}</td>
                     <td>{{if .Ephemeral}}yes{{else}}no{{end}}</td>

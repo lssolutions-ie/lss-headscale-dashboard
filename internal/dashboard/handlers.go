@@ -39,6 +39,12 @@ type Handler struct {
 var templateFuncs = template.FuncMap{
 	"contains":  strings.Contains,
 	"hasPrefix": strings.HasPrefix,
+	"truncate": func(s string, n int) string {
+		if len(s) <= n {
+			return s
+		}
+		return s[:n] + "…"
+	},
 }
 
 func New(d *sql.DB, log *slog.Logger) (*Handler, error) {
