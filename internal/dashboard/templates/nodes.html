@@ -110,7 +110,7 @@
                     <div class="col-md-4">
                         <label class="form-label">Node ID <small class="text-muted">(primary key)</small></label>
                         <input type="number" name="new_id" class="form-control" value="{{.ID}}" min="1" {{if not $root.DBEnabled}}disabled{{end}}>
-                        <small class="form-hint text-warning">Changing the ID may orphan rows in routes / acl tables. Use with care.</small>
+                        <small class="form-hint text-muted">Headscale 0.28+: routes live inline on this row, so an ID change won't orphan anything. Headscale will be restarted to refresh its NetMap.</small>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">IPv4</label>
