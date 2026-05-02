@@ -79,7 +79,14 @@ install_binary() {
 }
 
 install_systemd() {
-    cat >"$UNIT" <<'EOF'
+    # Only set SupplementaryGroups=headscale when the headscale group exists,
+    # otherwise systemd refuses to start the unit (status=216/GROUP).
+    SUPP_GROUPS_LINE=""
+    if getent group headscale >/dev/null 2>&1; then
+        SUPP_GROUPS_LINE="SupplementaryGroups=headscale"
+    fi
+
+    cat >"$UNIT" <<EOF
 [Unit]
 Description=LSS Headscale Dashboard
 After=network.target headscale.service
@@ -87,9 +94,9 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=__SVC_USER__
-Group=__SVC_USER__
-ExecStart=__PREFIX__/lss-headscale-dashboard --config /etc/lss-headscale-dashboard/config.yaml
+User=$SVC_USER
+Group=$SVC_USER
+ExecStart=$PREFIX/lss-headscale-dashboard --config /etc/lss-headscale-dashboard/config.yaml
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
@@ -98,12 +105,11 @@ ProtectHome=true
 PrivateTmp=true
 PrivateDevices=true
 ReadWritePaths=/var/lib/lss-headscale-dashboard
-SupplementaryGroups=headscale
+$SUPP_GROUPS_LINE
 
 [Install]
 WantedBy=multi-user.target
 EOF
-    sed -i "s#__SVC_USER__#$SVC_USER#g; s#__PREFIX__#$PREFIX#g" "$UNIT"
     systemctl daemon-reload
     systemctl enable --now lss-headscale-dashboard.service
 }

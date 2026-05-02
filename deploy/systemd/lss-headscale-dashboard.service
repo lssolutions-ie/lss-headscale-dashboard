@@ -16,8 +16,10 @@ ProtectHome=true
 PrivateTmp=true
 PrivateDevices=true
 ReadWritePaths=/var/lib/lss-headscale-dashboard
-# Required to read Headscale's unix socket when running on the same host.
-SupplementaryGroups=headscale
+# Uncomment ONLY if installing on the same host as Headscale (so the service
+# can read /var/run/headscale/headscale.sock). systemd will refuse to start
+# the unit (status=216/GROUP) if this group does not exist.
+# SupplementaryGroups=headscale
 
 [Install]
 WantedBy=multi-user.target
