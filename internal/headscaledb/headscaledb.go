@@ -25,6 +25,7 @@ const DefaultPath = "/var/lib/headscale/db.sqlite"
 const DefaultRestartCmd = "sudo -n /usr/bin/systemctl restart headscale.service"
 
 var allowedColumns = map[string]bool{
+	"id":         true,
 	"ipv4":       true,
 	"ipv6":       true,
 	"hostname":   true,

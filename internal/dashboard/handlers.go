@@ -498,6 +498,14 @@ func (h *Handler) nodesEdit(w http.ResponseWriter, r *http.Request) {
 		if v := strings.TrimSpace(r.FormValue("hostname")); v != current.Name {
 			dbFields["hostname"] = v
 		}
+		if v := strings.TrimSpace(r.FormValue("new_id")); v != "" && v != current.ID {
+			if n, err := strconv.Atoi(v); err != nil || n <= 0 {
+				setFlash(w, "danger", "New ID must be a positive integer.")
+				http.Redirect(w, r, "/nodes", http.StatusSeeOther)
+				return
+			}
+			dbFields["id"] = v
+		}
 		if len(dbFields) > 0 {
 			n, err := headscaledb.New(hdbCfg).UpdateNodeFields(id, dbFields)
 			if err != nil {
