@@ -28,10 +28,11 @@ type SMTP struct {
 }
 
 type Headscale struct {
-	Enabled bool   `json:"enabled"`
-	Address string `json:"address"`  // e.g. http://127.0.0.1:8080
-	APIKey  string `json:"api_key"`
-	TLSSkip bool   `json:"tls_skip"` // skip TLS verify for self-signed
+	Enabled   bool   `json:"enabled"`
+	Address   string `json:"address"`    // API URL, e.g. http://127.0.0.1:8080
+	APIKey    string `json:"api_key"`
+	TLSSkip   bool   `json:"tls_skip"`   // skip TLS verify for self-signed
+	ClientURL string `json:"client_url"` // public URL Tailscale clients use (server_url)
 }
 
 // HeadscaleDB is the local-filesystem path to Headscale's SQLite DB plus the

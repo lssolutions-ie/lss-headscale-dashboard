@@ -2,7 +2,95 @@
 {{define "content"}}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2 class="page-title m-0">Nodes <span class="text-muted ms-2 fs-5">{{len .Nodes}}</span></h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#register-node">Register node</button>
 </div>
+
+<!-- Register Node modal -->
+<div class="modal modal-lg" id="register-node" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-3"><h5 class="modal-title m-0">Register a new node</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+
+                <form id="register-node-form">
+                    <input type="hidden" name="csrf" value="{{.CSRF}}">
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">Owner user</label>
+                            <select name="user" class="form-select" required>
+                                {{range .UsersList}}<option value="{{.}}">{{.}}</option>{{else}}<option value="" disabled>(no users — create one first)</option>{{end}}
+                            </select>
+                        </div>
+                        <div class="col-md-6"><label class="form-label">Hostname <small class="text-muted">(<code>--hostname</code>)</small></label>
+                            <input type="text" name="hostname" class="form-control" placeholder="my-host">
+                        </div>
+                        <div class="col-12"><label class="form-label">ACL tags <small class="text-muted">(comma-separated, must match <code>tagOwners</code>)</small></label>
+                            <input type="text" name="tags" class="form-control" placeholder="tag:server, tag:db">
+                        </div>
+                        <div class="col-md-4 form-check ms-3"><input type="checkbox" name="reusable" id="reg-reusable" class="form-check-input"><label class="form-check-label" for="reg-reusable">Reusable</label></div>
+                        <div class="col-md-4 form-check"><input type="checkbox" name="ephemeral" id="reg-ephemeral" class="form-check-input"><label class="form-check-label" for="reg-ephemeral">Ephemeral</label></div>
+                        <div class="col-md-4"><label class="form-label">Expiration <small class="text-muted">(optional, ISO-8601)</small></label>
+                            <input type="text" name="expiration" class="form-control" placeholder="2026-12-31T23:59:59Z">
+                        </div>
+                        <div class="col-12"><label class="form-label">Login server URL <small class="text-muted">(<code>--login-server</code>)</small></label>
+                            <input type="text" name="login_server" class="form-control" value="{{.ClientURL}}" placeholder="https://headscale.example.com" required>
+                            <small class="form-hint">Tailscale clients use this URL to connect. Defaults from Settings → Headscale → Public client URL.</small>
+                        </div>
+                    </div>
+
+                    <div id="register-node-error" class="alert alert-danger mt-3" style="display:none"></div>
+
+                    <div class="modal-footer mt-3 px-0">
+                        <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Generate command</button>
+                    </div>
+                </form>
+
+                <div id="register-node-result" style="display:none">
+                    <div class="alert alert-success mt-2"><strong>Pre-auth key created.</strong> Run this on the node:</div>
+                    <textarea id="register-node-cmd" class="form-control font-monospace" rows="4" readonly></textarea>
+                    <div class="d-flex justify-content-end gap-2 mt-3">
+                        <button type="button" class="btn btn-outline-secondary" id="register-node-copy">Copy command</button>
+                        <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="location.reload()">Done</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const form = document.getElementById('register-node-form');
+    const result = document.getElementById('register-node-result');
+    const cmdBox = document.getElementById('register-node-cmd');
+    const errBox = document.getElementById('register-node-error');
+    const copyBtn = document.getElementById('register-node-copy');
+    if (!form) return;
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errBox.style.display = 'none';
+        const fd = new FormData(form);
+        try {
+            const res = await fetch('/nodes/register', { method: 'POST', body: fd });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+            cmdBox.value = data.command;
+            form.style.display = 'none';
+            result.style.display = '';
+        } catch (err) {
+            errBox.textContent = 'Failed: ' + err.message;
+            errBox.style.display = '';
+        }
+    });
+    copyBtn?.addEventListener('click', () => {
+        cmdBox.select();
+        document.execCommand('copy');
+        copyBtn.textContent = 'Copied ✓';
+        setTimeout(() => copyBtn.textContent = 'Copy command', 1500);
+    });
+})();
+</script>
 
 {{if .HeadscaleError}}
 <div class="alert alert-warning"><strong>Headscale connection:</strong> {{.HeadscaleError}} <a href="/settings#headscale" class="alert-link">Configure</a></div>

@@ -17,6 +17,10 @@
                         <input type="password" name="api_key" class="form-control" placeholder="hssk_…" value="{{.Headscale.APIKey}}" required>
                         <small class="form-hint">Generate with <code>headscale apikeys create</code>.</small>
                     </div>
+                    <div class="mb-3"><label class="form-label">Public client URL <small class="text-muted">(your Headscale <code>server_url</code>)</small></label>
+                        <input type="text" name="client_url" class="form-control" placeholder="https://headscale.example.com" value="{{.Headscale.ClientURL}}">
+                        <small class="form-hint">Used in the "Register Node" command. Leave empty to fall back to the API address above.</small>
+                    </div>
                     <div class="mb-3 form-check">
                         <input type="checkbox" name="tls_skip" class="form-check-input" id="tls_skip" {{if .Headscale.TLSSkip}}checked{{end}}>
                         <label class="form-check-label" for="tls_skip">Skip TLS certificate verification (self-signed certs)</label>

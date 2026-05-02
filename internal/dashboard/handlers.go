@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -86,6 +87,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /nodes/delete", h.nodesDelete)
 	mux.HandleFunc("POST /nodes/tags", h.nodesTags)
 	mux.HandleFunc("POST /nodes/edit", h.nodesEdit)
+	mux.HandleFunc("POST /nodes/register", h.nodesRegister)
 	mux.HandleFunc("GET /preauthkeys", h.preAuthKeys)
 	mux.HandleFunc("POST /preauthkeys/create", h.preAuthKeysCreate)
 	mux.HandleFunc("POST /preauthkeys/expire", h.preAuthKeysExpire)
@@ -334,6 +336,7 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 		DBEnabled  bool
 		DBNodes    map[string]headscaledb.FullNode
 		DBColumns  []string
+		ClientURL  string
 	}
 	pd := pageData{basePage: bp}
 	hdb, _ := settings.GetHeadscaleDB(h.db)
@@ -343,6 +346,11 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 			pd.DBNodes = full
 		}
 		pd.DBColumns = headscaledb.AllowedColumns
+	}
+	if hs, _ := settings.GetHeadscale(h.db); hs.ClientURL != "" {
+		pd.ClientURL = hs.ClientURL
+	} else if hs.Address != "" {
+		pd.ClientURL = hs.Address
 	}
 	c, errStr := h.headscaleClient(r.Context())
 	if c == nil {
@@ -390,6 +398,84 @@ func (h *Handler) nodesTags(w http.ResponseWriter, r *http.Request) {
 		setFlash(w, "success", "Tags updated.")
 	}
 	http.Redirect(w, r, "/nodes", http.StatusSeeOther)
+}
+
+// nodesRegister creates a pre-auth key for a new node and returns a JSON
+// payload with a ready-to-paste `tailscale up` command.
+func (h *Handler) nodesRegister(w http.ResponseWriter, r *http.Request) {
+	if !h.checkCSRF(r) {
+		writeJSON(w, http.StatusForbidden, map[string]any{"ok": false, "error": "csrf check failed"})
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "bad form"})
+		return
+	}
+	user := strings.TrimSpace(r.FormValue("user"))
+	hostname := strings.TrimSpace(r.FormValue("hostname"))
+	tags := splitCSV(r.FormValue("tags"))
+	reusable := r.FormValue("reusable") == "on"
+	ephemeral := r.FormValue("ephemeral") == "on"
+	exp := strings.TrimSpace(r.FormValue("expiration"))
+	loginServer := strings.TrimSpace(r.FormValue("login_server"))
+
+	if user == "" || loginServer == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "user and login_server are required"})
+		return
+	}
+	for _, t := range tags {
+		if !strings.HasPrefix(t, "tag:") {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "each tag must start with 'tag:' (got: " + t + ")"})
+			return
+		}
+	}
+
+	c, errStr := h.headscaleClient(r.Context())
+	if c == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": errStr})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	defer cancel()
+	key, err := c.CreatePreAuthKey(ctx, user, reusable, ephemeral, tags, exp)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+
+	cmd := buildRegisterCommand(loginServer, key.Key, hostname, tags)
+	audit.Write(h.db, actorID(r), currentIP(r), audit.ActionPreAuthKeyCreate, user, map[string]any{
+		"reusable": reusable, "ephemeral": ephemeral, "tags": tags, "via": "register-node",
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "command": cmd, "key": key.Key})
+}
+
+func buildRegisterCommand(loginServer, key, hostname string, tags []string) string {
+	parts := []string{
+		"sudo tailscale up",
+		"  --login-server=" + loginServer,
+		"  --authkey=" + key,
+	}
+	if hostname != "" {
+		parts = append(parts, "  --hostname="+shellArg(hostname))
+	}
+	if len(tags) > 0 {
+		parts = append(parts, "  --advertise-tags="+strings.Join(tags, ","))
+	}
+	return strings.Join(parts, " \\\n")
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func shellArg(s string) string {
+	if !strings.ContainsAny(s, " '\"$`\\") {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // nodesEdit handles the unified Edit Node form: API-managed fields
@@ -772,10 +858,11 @@ func (h *Handler) settingsSaveHeadscale(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	cfg := settings.Headscale{
-		Enabled: true,
-		Address: strings.TrimSpace(r.FormValue("address")),
-		APIKey:  strings.TrimSpace(r.FormValue("api_key")),
-		TLSSkip: r.FormValue("tls_skip") == "on",
+		Enabled:   true,
+		Address:   strings.TrimSpace(r.FormValue("address")),
+		APIKey:    strings.TrimSpace(r.FormValue("api_key")),
+		TLSSkip:   r.FormValue("tls_skip") == "on",
+		ClientURL: strings.TrimSpace(r.FormValue("client_url")),
 	}
 	if err := settings.SaveHeadscale(h.db, cfg); err != nil {
 		setFlash(w, "danger", "Save failed: "+err.Error())
@@ -792,10 +879,11 @@ func (h *Handler) settingsTestHeadscale(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	cfg := settings.Headscale{
-		Enabled: true,
-		Address: strings.TrimSpace(r.FormValue("address")),
-		APIKey:  strings.TrimSpace(r.FormValue("api_key")),
-		TLSSkip: r.FormValue("tls_skip") == "on",
+		Enabled:   true,
+		Address:   strings.TrimSpace(r.FormValue("address")),
+		APIKey:    strings.TrimSpace(r.FormValue("api_key")),
+		TLSSkip:   r.FormValue("tls_skip") == "on",
+		ClientURL: strings.TrimSpace(r.FormValue("client_url")),
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()
