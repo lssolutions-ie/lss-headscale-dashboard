@@ -3,10 +3,10 @@
 <div class="step">Setup complete</div>
 <h1>You're all set</h1>
 <p>Admin account <strong>{{.Username}}</strong> is ready with TOTP enabled.</p>
-
-<div class="warn">
-    <strong>Coming in upcoming releases:</strong> wizard steps for SMTP and Headscale connection,
-    plus the login screen and dashboard. For now, the service is up — see
-    <code>journalctl -u lss-headscale-dashboard</code> for logs.
-</div>
+<p style="margin-top:1.5rem">
+    <a href="/login" style="display:inline-block;padding:0.6rem 1.2rem;background:#2563eb;color:white;text-decoration:none;border-radius:6px;font-weight:600;">Sign in →</a>
+</p>
+<p style="color:#6b7280;font-size:0.9rem;margin-top:1rem">
+    Configure Headscale connection and SMTP from the Settings page after signing in.
+</p>
 {{end}}

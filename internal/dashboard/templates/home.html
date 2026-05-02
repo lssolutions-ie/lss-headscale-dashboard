@@ -1,0 +1,70 @@
+{{define "title"}}Overview{{end}}
+{{define "content"}}
+<div class="row row-cards">
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col"><div class="font-weight-medium">Users</div><div class="text-muted">{{.Stats.Users}}</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col"><div class="font-weight-medium">Nodes</div><div class="text-muted">{{.Stats.Nodes}}</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col"><div class="font-weight-medium">Online</div><div class="text-muted">{{.Stats.Online}}</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+        <div class="card card-sm">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col"><div class="font-weight-medium">Pre-auth keys</div><div class="text-muted">{{.Stats.Keys}}</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{if .HeadscaleError}}
+<div class="alert alert-warning mt-4">
+    <strong>Headscale connection:</strong> {{.HeadscaleError}}
+    <a href="/settings#headscale" class="alert-link ms-2">Configure</a>
+</div>
+{{end}}
+
+<div class="card mt-4">
+    <div class="card-header"><h3 class="card-title">Recent activity</h3></div>
+    <div class="table-responsive">
+        <table class="table table-vcenter">
+            <thead><tr><th>When</th><th>Action</th><th>Target</th><th>Actor</th><th>IP</th></tr></thead>
+            <tbody>
+                {{range .Recent}}
+                <tr>
+                    <td><span class="text-muted">{{.Timestamp.Format "2006-01-02 15:04:05"}}</span></td>
+                    <td><code>{{.Action}}</code></td>
+                    <td>{{.Target}}</td>
+                    <td>{{if .ActorUserID}}#{{.ActorUserID}}{{else}}—{{end}}</td>
+                    <td>{{.IP}}</td>
+                </tr>
+                {{else}}
+                <tr><td colspan="5" class="text-muted">No activity yet.</td></tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{end}}

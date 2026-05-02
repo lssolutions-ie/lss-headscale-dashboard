@@ -24,7 +24,7 @@ gRPC. Two modes, picked by the user in the setup wizard and persisted in `config
 - `socket` (default, on-host install): `unix:///var/run/headscale/headscale.sock`. The systemd unit sets `SupplementaryGroups=headscale` so the service user can read it.
 - `grpc` (remote install): `host:port` + `tls: true` + Bearer API key in gRPC metadata.
 
-**Current state (v0.1.0):** `internal/headscale/client.go` does a **dial-only connection test** — it opens the gRPC connection (unix socket or TCP+TLS) and waits for the channel to reach `READY` within a timeout. This is sufficient for the wizard's "Test connection" button. Real RPC stubs (`ListUsers`, `ListNodes`, etc.) require generating Go code from Headscale's `.proto` files via `protoc`; add those once `protoc` is available in the build environment, drop them under `internal/headscale/proto/`, and add a `make proto` target.
+**Current state (v1.0.0):** `internal/headscale/client.go` calls Headscale's gRPC-Gateway HTTP/REST API at `/api/v1/...` with a Bearer API key. This avoids the protoc + Go-stub generation that raw gRPC would require, while covering every management endpoint. Address + API key are configured via the dashboard's Settings page (or wizard step 3 once it's built).
 
 **Hard rules:**
 

@@ -1,0 +1,142 @@
+{{define "title"}}Settings{{end}}
+{{define "content"}}
+<h2 class="page-title mb-3">Settings</h2>
+
+<div class="row row-cards">
+    <div class="col-md-6">
+        <div class="card" id="headscale">
+            <div class="card-header"><h3 class="card-title">Headscale connection</h3></div>
+            <div class="card-body">
+                <form method="post" action="/settings/headscale">
+                    <input type="hidden" name="csrf" value="{{.CSRF}}">
+                    <div class="mb-3"><label class="form-label">Address</label>
+                        <input type="text" name="address" class="form-control" placeholder="http://127.0.0.1:8080" value="{{.Headscale.Address}}" required>
+                        <small class="form-hint">Headscale's HTTP API URL. On the same host: <code>http://127.0.0.1:8080</code></small>
+                    </div>
+                    <div class="mb-3"><label class="form-label">API key</label>
+                        <input type="password" name="api_key" class="form-control" placeholder="hssk_…" value="{{.Headscale.APIKey}}" required>
+                        <small class="form-hint">Generate with <code>headscale apikeys create</code>.</small>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" name="tls_skip" class="form-check-input" id="tls_skip" {{if .Headscale.TLSSkip}}checked{{end}}>
+                        <label class="form-check-label" for="tls_skip">Skip TLS certificate verification (self-signed certs)</label>
+                    </div>
+                    <button class="btn btn-primary">Save</button>
+                    <button class="btn btn-outline-secondary" formaction="/settings/headscale/test">Test connection</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card" id="smtp">
+            <div class="card-header"><h3 class="card-title">SMTP</h3></div>
+            <div class="card-body">
+                <form method="post" action="/settings/smtp">
+                    <input type="hidden" name="csrf" value="{{.CSRF}}">
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" name="enabled" class="form-check-input" id="smtp_enabled" {{if .SMTP.Enabled}}checked{{end}}>
+                        <label class="form-check-label" for="smtp_enabled">Enable SMTP</label>
+                    </div>
+                    <div class="row">
+                        <div class="col-8 mb-3"><label class="form-label">Host</label><input type="text" name="host" class="form-control" value="{{.SMTP.Host}}"></div>
+                        <div class="col-4 mb-3"><label class="form-label">Port</label><input type="number" name="port" class="form-control" value="{{.SMTP.Port}}"></div>
+                    </div>
+                    <div class="mb-3"><label class="form-label">From</label><input type="email" name="from" class="form-control" value="{{.SMTP.From}}"></div>
+                    <div class="mb-3"><label class="form-label">Username</label><input type="text" name="username" class="form-control" autocomplete="off" value="{{.SMTP.Username}}"></div>
+                    <div class="mb-3"><label class="form-label">Password</label><input type="password" name="password" class="form-control" autocomplete="new-password" value="{{.SMTP.Password}}"></div>
+                    <div class="mb-3"><label class="form-label">TLS</label>
+                        <select class="form-select" name="tls">
+                            <option value="none" {{if eq .SMTP.TLS "none"}}selected{{end}}>None</option>
+                            <option value="starttls" {{if eq .SMTP.TLS "starttls"}}selected{{end}}>STARTTLS</option>
+                            <option value="tls" {{if eq .SMTP.TLS "tls"}}selected{{end}}>Implicit TLS</option>
+                        </select>
+                    </div>
+                    <div class="mb-3"><label class="form-label">Test recipient</label><input type="email" name="test_to" class="form-control" placeholder="you@example.com"></div>
+                    <button class="btn btn-primary">Save</button>
+                    <button class="btn btn-outline-secondary" formaction="/settings/smtp/test">Save &amp; send test email</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card" id="password">
+            <div class="card-header"><h3 class="card-title">Change password</h3></div>
+            <div class="card-body">
+                <form method="post" action="/settings/password">
+                    <input type="hidden" name="csrf" value="{{.CSRF}}">
+                    <div class="mb-3"><label class="form-label">Current password</label><input type="password" name="current" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label">New password (min 12)</label><input type="password" name="new" class="form-control" minlength="12" required></div>
+                    <div class="mb-3"><label class="form-label">Confirm new password</label><input type="password" name="confirm" class="form-control" minlength="12" required></div>
+                    <button class="btn btn-primary">Change password</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card" id="passkeys">
+            <div class="card-header"><h3 class="card-title">Security keys (Yubikey / Passkeys)</h3></div>
+            <div class="card-body">
+                <p class="text-muted">Register a FIDO2 security key (Yubikey, passkey, Touch ID) as an alternative to TOTP.
+                <strong>Requires HTTPS.</strong> Place the dashboard behind HAProxy/nginx with TLS to use this.</p>
+                <ul class="list-group">
+                    {{range .Passkeys}}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>{{if .Label}}{{.Label}}{{else}}(unnamed){{end}}<small class="text-muted ms-2">added {{.CreatedAt}}</small></span>
+                        <form method="post" action="/settings/passkeys/delete" class="m-0" onsubmit="return confirm('Remove this passkey?');">
+                            <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                            <input type="hidden" name="id" value="{{.ID}}">
+                            <button class="btn btn-sm btn-outline-danger">Remove</button>
+                        </form>
+                    </li>
+                    {{else}}
+                    <li class="list-group-item text-muted">No security keys registered.</li>
+                    {{end}}
+                </ul>
+                <button class="btn btn-primary mt-3" id="register-passkey-btn">Register a new key</button>
+                <div id="passkey-status" class="mt-2 small text-muted"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('register-passkey-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('passkey-status');
+    status.textContent = 'Starting registration…';
+    try {
+        const beginRes = await fetch('/settings/passkeys/register/begin', { method: 'POST', headers: { 'X-CSRF': '{{.CSRF}}' } });
+        if (!beginRes.ok) throw new Error('begin: ' + beginRes.status);
+        const opts = await beginRes.json();
+        // PublicKeyCredentialCreationOptions arrives base64url-encoded; convert.
+        opts.publicKey.challenge = b64uToBuf(opts.publicKey.challenge);
+        opts.publicKey.user.id = b64uToBuf(opts.publicKey.user.id);
+        if (opts.publicKey.excludeCredentials) opts.publicKey.excludeCredentials.forEach(c => c.id = b64uToBuf(c.id));
+
+        const cred = await navigator.credentials.create({ publicKey: opts.publicKey });
+        const att = {
+            id: cred.id,
+            rawId: bufToB64u(cred.rawId),
+            type: cred.type,
+            response: {
+                clientDataJSON: bufToB64u(cred.response.clientDataJSON),
+                attestationObject: bufToB64u(cred.response.attestationObject),
+            },
+        };
+        const label = prompt('Label this security key (e.g. "Yubikey 5C"):', 'Security key');
+        const finishRes = await fetch('/settings/passkeys/register/finish?label=' + encodeURIComponent(label || ''), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF': '{{.CSRF}}' },
+            body: JSON.stringify(att),
+        });
+        if (!finishRes.ok) throw new Error('finish: ' + (await finishRes.text()));
+        status.textContent = 'Registered. Reloading…';
+        location.reload();
+    } catch (e) { status.textContent = 'Failed: ' + e.message; }
+});
+function b64uToBuf(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; const bin = atob(s); const buf = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i); return buf.buffer; }
+function bufToB64u(buf) { const bin = String.fromCharCode(...new Uint8Array(buf)); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+</script>
+{{end}}

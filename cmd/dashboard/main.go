@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"errors"
 	"flag"
 	"log/slog"
@@ -9,13 +11,18 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/auth"
+	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/dashboard"
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/db"
+	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/login"
+	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/passkey"
+	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/settings"
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/setup"
 )
 
@@ -69,6 +76,23 @@ func parseLevel(s string) slog.Level {
 	}
 }
 
+// startBackgroundCleanup periodically purges old auth_failures + expired sessions.
+func startBackgroundCleanup(ctx context.Context, d *sql.DB) {
+	go func() {
+		t := time.NewTicker(5 * time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				_ = auth.PurgeOldAuthFailures(d)
+				_ = auth.PurgeExpiredSessions(d)
+			}
+		}
+	}()
+}
+
 func main() {
 	configPath := flag.String("config", "", "path to config.yaml")
 	flag.Parse()
@@ -100,6 +124,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	// --- Setup wizard handler (only routes used while setup_complete=false) ---
 	signer, err := auth.NewSetupSigner()
 	if err != nil {
 		logger.Error("setup signer", "err", err)
@@ -111,15 +136,82 @@ func main() {
 		os.Exit(1)
 	}
 
+	// --- Dashboard handler (post-login routes) ---
+	dashH, err := dashboard.New(d, logger)
+	if err != nil {
+		logger.Error("dashboard handler", "err", err)
+		os.Exit(1)
+	}
+
+	// --- Login handler (uses dashboard's base.html for layout) ---
+	loginH, err := login.New(d, logger, dashboard.TemplateFS, dashboard.TemplateGlob)
+	if err != nil {
+		logger.Error("login handler", "err", err)
+		os.Exit(1)
+	}
+
+	// --- Passkey (WebAuthn) handler ---
+	pkH := passkey.New(d, logger)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("ok\n"))
 	})
+
+	// Setup wizard routes are always mounted; once setup_complete=true the
+	// wizard handlers redirect to /login (handled inside setup.Handler).
 	setupH.Routes(mux)
 
+	loginH.Routes(mux)
+
+	// Authenticated dashboard routes — wrapped in RequireAuth.
+	authMW := auth.RequireAuth(d)
+	dashMux := http.NewServeMux()
+	dashH.Routes(dashMux)
+	// Passkey endpoints (also authenticated).
+	dashMux.HandleFunc("POST /settings/passkeys/register/begin", func(w http.ResponseWriter, r *http.Request) {
+		s := auth.SessionFrom(r.Context())
+		if s == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		pkH.BeginRegister(w, r, s.UserID)
+	})
+	dashMux.HandleFunc("POST /settings/passkeys/register/finish", func(w http.ResponseWriter, r *http.Request) {
+		s := auth.SessionFrom(r.Context())
+		if s == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		label := r.URL.Query().Get("label")
+		pkH.FinishRegister(w, r, s.UserID, label)
+	})
+	dashMux.HandleFunc("POST /settings/passkeys/delete", func(w http.ResponseWriter, r *http.Request) {
+		s := auth.SessionFrom(r.Context())
+		if s == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		idStr := r.FormValue("id")
+		credID, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			http.Error(w, "bad id", http.StatusBadRequest)
+			return
+		}
+		if err := pkH.DeleteCredential(s.UserID, credID); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		_ = http.Redirect
+	})
+
+	// Mount the auth-protected mux as a fallback for everything not matched above.
+	// We intercept "/" specifically: redirect to /setup if not complete, /login if not authenticated.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		complete, err := setup.IsComplete(d)
+		complete, err := settings.IsSetupComplete(d)
 		if err != nil {
 			logger.Error("read setup state", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -129,14 +221,8 @@ func main() {
 			http.Redirect(w, r, "/setup", http.StatusSeeOther)
 			return
 		}
-		// Post-setup landing — login screen + dashboard land in upcoming releases.
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8">
-<title>LSS Headscale Dashboard</title>
-<body style="font-family:system-ui;max-width:540px;margin:3rem auto;padding:0 1rem;line-height:1.5">
-<h1>LSS Headscale Dashboard</h1>
-<p>Setup complete. Login screen and dashboard arrive in the next release.</p>
-</body>`))
+		// Authenticated dispatch.
+		authMW(dashMux).ServeHTTP(w, r)
 	})
 
 	srv := &http.Server{
@@ -147,6 +233,8 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	startBackgroundCleanup(ctx, d)
 
 	go func() {
 		logger.Info("server starting", "addr", cfg.Listen, "version", version, "commit", commit)

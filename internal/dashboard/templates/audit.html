@@ -1,0 +1,25 @@
+{{define "title"}}Audit log{{end}}
+{{define "content"}}
+<h2 class="page-title mb-3">Audit log</h2>
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-vcenter">
+            <thead><tr><th>When</th><th>Action</th><th>Target</th><th>Actor</th><th>IP</th><th>Details</th></tr></thead>
+            <tbody>
+            {{range .Entries}}
+                <tr>
+                    <td><span class="text-muted">{{.Timestamp.Format "2006-01-02 15:04:05"}}</span></td>
+                    <td><code>{{.Action}}</code></td>
+                    <td>{{.Target}}</td>
+                    <td>{{if .ActorUserID}}#{{.ActorUserID}}{{else}}—{{end}}</td>
+                    <td>{{.IP}}</td>
+                    <td><small class="text-muted">{{.Details}}</small></td>
+                </tr>
+            {{else}}
+                <tr><td colspan="6" class="text-muted">No audit entries yet.</td></tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{end}}

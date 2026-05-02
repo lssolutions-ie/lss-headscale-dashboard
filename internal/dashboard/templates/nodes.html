@@ -1,0 +1,43 @@
+{{define "title"}}Nodes{{end}}
+{{define "content"}}
+<h2 class="page-title mb-3">Nodes</h2>
+
+{{if .HeadscaleError}}
+<div class="alert alert-warning"><strong>Headscale connection:</strong> {{.HeadscaleError}} <a href="/settings#headscale" class="alert-link">Configure</a></div>
+{{else}}
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-vcenter">
+            <thead><tr><th>Name</th><th>User</th><th>IPs</th><th>Status</th><th>Last seen</th><th class="w-1"></th></tr></thead>
+            <tbody>
+            {{range .Nodes}}
+                <tr>
+                    <td><strong>{{.GivenName}}</strong>{{if ne .Name .GivenName}}<div class="text-muted small">{{.Name}}</div>{{end}}</td>
+                    <td>{{.User.Name}}</td>
+                    <td><code>{{range $i, $ip := .IPAddrs}}{{if $i}}, {{end}}{{$ip}}{{end}}</code></td>
+                    <td>{{if .Online}}<span class="badge bg-success">online</span>{{else}}<span class="badge bg-secondary">offline</span>{{end}}</td>
+                    <td><span class="text-muted">{{.LastSeen}}</span></td>
+                    <td>
+                        <div class="btn-list">
+                            <form method="post" action="/nodes/expire" class="d-inline" onsubmit="return confirm('Expire node {{.GivenName}}?');">
+                                <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                                <input type="hidden" name="id" value="{{.ID}}">
+                                <button class="btn btn-sm btn-outline-warning">Expire</button>
+                            </form>
+                            <form method="post" action="/nodes/delete" class="d-inline" onsubmit="return confirm('Delete node {{.GivenName}}?');">
+                                <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                                <input type="hidden" name="id" value="{{.ID}}">
+                                <button class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+            {{else}}
+                <tr><td colspan="6" class="text-muted">No nodes registered.</td></tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+{{end}}
+{{end}}

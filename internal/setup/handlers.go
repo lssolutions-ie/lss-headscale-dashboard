@@ -18,6 +18,7 @@ import (
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/auth"
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/db"
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/headscale"
+	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/settings"
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/users"
 )
 
@@ -323,22 +324,19 @@ func (h *Handler) testHeadscale(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Mode       string `json:"mode"`
-		SocketPath string `json:"socket_path"`
-		Address    string `json:"address"`
-		TLS        bool   `json:"tls"`
-		APIKey     string `json:"api_key"`
+		Address string `json:"address"`
+		APIKey  string `json:"api_key"`
+		TLSSkip bool   `json:"tls_skip"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, 400, map[string]any{"ok": false, "error": "bad json"})
 		return
 	}
-	cfg := headscale.Config{
-		Mode:       headscale.Mode(req.Mode),
-		SocketPath: req.SocketPath,
-		Address:    req.Address,
-		TLS:        req.TLS,
-		APIKey:     req.APIKey,
+	cfg := settings.Headscale{
+		Enabled: true,
+		Address: req.Address,
+		APIKey:  req.APIKey,
+		TLSSkip: req.TLSSkip,
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()
