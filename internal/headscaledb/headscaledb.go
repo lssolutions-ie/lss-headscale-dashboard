@@ -24,13 +24,27 @@ import (
 const DefaultPath = "/var/lib/headscale/db.sqlite"
 const DefaultRestartCmd = "sudo -n /usr/bin/systemctl restart headscale.service"
 
-var allowedColumns = map[string]bool{
-	"id":         true,
-	"ipv4":       true,
-	"ipv6":       true,
-	"hostname":   true,
-	"given_name": true,
+// AllowedColumns is the list of columns the dashboard will write to the
+// nodes table. Includes every column in Headscale 0.28's schema; the user
+// is responsible for the consequences of editing crypto keys, FKs, or
+// timestamps.
+var AllowedColumns = []string{
+	"id", "machine_key", "node_key", "disco_key",
+	"endpoints", "host_info",
+	"ipv4", "ipv6",
+	"hostname", "given_name",
+	"user_id", "register_method", "tags", "auth_key_id",
+	"last_seen", "expiry", "approved_routes",
+	"created_at", "updated_at", "deleted_at",
 }
+
+var allowedColumns = func() map[string]bool {
+	m := map[string]bool{}
+	for _, c := range AllowedColumns {
+		m[c] = true
+	}
+	return m
+}()
 
 type Client struct {
 	cfg settings.HeadscaleDB
@@ -53,6 +67,77 @@ func (c *Client) open() (*sql.DB, error) {
 		return nil, err
 	}
 	return d, nil
+}
+
+// FullNode is every column in the nodes table as a string (NULL → "").
+// Returned by ListFullNodes so the Edit modal can populate every input.
+type FullNode map[string]string
+
+// ListFullNodes returns one FullNode per row, keyed by the row's id (as string).
+// All columns are returned as strings; NULLs become "".
+func (c *Client) ListFullNodes() (map[string]FullNode, error) {
+	d, err := c.open()
+	if err != nil {
+		return nil, err
+	}
+	defer d.Close()
+	cols := strings.Join(quoteColumns(AllowedColumns), ", ")
+	rows, err := d.Query("SELECT " + cols + " FROM nodes WHERE deleted_at IS NULL")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]FullNode{}
+	for rows.Next() {
+		vals := make([]any, len(AllowedColumns))
+		ptrs := make([]any, len(AllowedColumns))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, err
+		}
+		fn := FullNode{}
+		for i, col := range AllowedColumns {
+			fn[col] = toString(vals[i])
+		}
+		out[fn["id"]] = fn
+	}
+	return out, rows.Err()
+}
+
+// quoteColumns wraps `tags` (a SQLite reserved word) in double-quotes; others
+// pass through. SQLite is fine with quoting non-reserved names too but we keep
+// the SQL readable.
+func quoteColumns(cols []string) []string {
+	out := make([]string, len(cols))
+	for i, c := range cols {
+		if c == "tags" {
+			out[i] = `"tags"`
+		} else {
+			out[i] = c
+		}
+	}
+	return out
+}
+
+func toString(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	case []byte:
+		return string(x)
+	case int64:
+		return strconv.FormatInt(x, 10)
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case time.Time:
+		return x.Format("2006-01-02 15:04:05")
+	default:
+		return fmt.Sprintf("%v", x)
+	}
 }
 
 // Test verifies the file is reachable and the nodes table exists.
@@ -85,14 +170,19 @@ func (c *Client) UpdateNodeFields(nodeID string, fields map[string]string) (int6
 		sets = append(sets, col+" = ?")
 		args = append(args, val)
 	}
-	args = append(args, id)
 	d, err := c.open()
 	if err != nil {
 		return 0, err
 	}
 	defer d.Close()
-	stmt := "UPDATE nodes SET " + strings.Join(sets, ", ") + ", updated_at = ? WHERE id = ?"
-	args = append(args[:len(args)-1], time.Now().UTC().Format("2006-01-02 15:04:05"), id)
+	// updated_at is also a writable column; only auto-touch it when the
+	// caller didn't pass one explicitly.
+	if _, explicit := fields["updated_at"]; !explicit {
+		sets = append(sets, "updated_at = ?")
+		args = append(args, time.Now().UTC().Format("2006-01-02 15:04:05"))
+	}
+	args = append(args, id)
+	stmt := "UPDATE nodes SET " + strings.Join(sets, ", ") + " WHERE id = ?"
 	res, err := d.Exec(stmt, args...)
 	if err != nil {
 		return 0, err

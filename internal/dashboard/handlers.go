@@ -329,13 +329,20 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 	bp := h.loadBase(w, r, "nodes")
 	type pageData struct {
 		basePage
-		Nodes     []headscale.Node
-		UsersList []string
-		DBEnabled bool
+		Nodes      []headscale.Node
+		UsersList  []string
+		DBEnabled  bool
+		DBNodes    map[string]headscaledb.FullNode
+		DBColumns  []string
 	}
 	pd := pageData{basePage: bp}
-	if hdb, _ := settings.GetHeadscaleDB(h.db); hdb.Enabled && hdb.Path != "" {
+	hdb, _ := settings.GetHeadscaleDB(h.db)
+	if hdb.Enabled && hdb.Path != "" {
 		pd.DBEnabled = true
+		if full, err := headscaledb.New(hdb).ListFullNodes(); err == nil {
+			pd.DBNodes = full
+		}
+		pd.DBColumns = headscaledb.AllowedColumns
 	}
 	c, errStr := h.headscaleClient(r.Context())
 	if c == nil {
@@ -402,124 +409,58 @@ func (h *Handler) nodesEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c, errStr := h.headscaleClient(r.Context())
-	if c == nil {
-		setFlash(w, "danger", errStr)
-		http.Redirect(w, r, "/nodes", http.StatusSeeOther)
-		return
-	}
-
-	// Locate the current node for diffing.
-	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
-	defer cancel()
-	currentList, err := c.ListNodes(ctx, "")
-	if err != nil {
-		setFlash(w, "danger", "List failed: "+err.Error())
-		http.Redirect(w, r, "/nodes", http.StatusSeeOther)
-		return
-	}
-	var current *headscale.Node
-	for i := range currentList {
-		if currentList[i].ID == id {
-			current = &currentList[i]
-			break
-		}
-	}
-	if current == nil {
-		setFlash(w, "danger", "Node not found.")
-		http.Redirect(w, r, "/nodes", http.StatusSeeOther)
-		return
-	}
-
 	var changes []string
 	var firstErr error
 
-	// API: rename (given_name)
-	wantName := strings.TrimSpace(r.FormValue("given_name"))
-	if wantName != "" && wantName != current.GivenName {
-		if err := c.RenameNode(ctx, id, wantName); err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-		} else {
-			changes = append(changes, "rename "+current.GivenName+" → "+wantName)
-		}
-	}
-
-	// API: tags
-	wantTags := splitCSV(r.FormValue("tags"))
-	for _, t := range wantTags {
-		if !strings.HasPrefix(t, "tag:") {
-			setFlash(w, "danger", "Each tag must start with 'tag:'. Got: "+t)
-			http.Redirect(w, r, "/nodes", http.StatusSeeOther)
-			return
-		}
-	}
-	if !sameStringSlice(wantTags, current.ForcedTags) {
-		if err := c.SetNodeTags(ctx, id, wantTags); err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-		} else {
-			changes = append(changes, "tags")
-		}
-	}
-
-	// API: move user
-	wantUser := strings.TrimSpace(r.FormValue("user"))
-	if wantUser != "" && wantUser != current.User.Name {
-		if err := c.MoveNodeToUser(ctx, id, wantUser); err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-		} else {
-			changes = append(changes, "user "+current.User.Name+" → "+wantUser)
-		}
-	}
-
-	// DB: ipv4 / ipv6 / hostname
+	// DB: every whitelisted column. Values come straight from the form;
+	// we diff against the current DB row so only changed columns are written.
 	hdbCfg, _ := settings.GetHeadscaleDB(h.db)
 	if hdbCfg.Enabled && hdbCfg.Path != "" {
+		hdbClient := headscaledb.New(hdbCfg)
+		dbNodes, err := hdbClient.ListFullNodes()
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("db read: %w", err)
+			}
+		}
+		currentRow := dbNodes[id]
 		dbFields := map[string]string{}
-		var curV4, curV6 string
-		for _, ip := range current.IPAddrs {
-			if strings.Contains(ip, ":") {
-				curV6 = ip
-			} else {
-				curV4 = ip
+		for _, col := range headscaledb.AllowedColumns {
+			formName := col
+			if col == "id" {
+				formName = "new_id" // routing field is `id`; new value lives in `new_id`
 			}
-		}
-		if v := strings.TrimSpace(r.FormValue("ipv4")); v != curV4 {
-			dbFields["ipv4"] = v
-		}
-		if v := strings.TrimSpace(r.FormValue("ipv6")); v != curV6 {
-			dbFields["ipv6"] = v
-		}
-		if v := strings.TrimSpace(r.FormValue("hostname")); v != current.Name {
-			dbFields["hostname"] = v
-		}
-		if v := strings.TrimSpace(r.FormValue("new_id")); v != "" && v != current.ID {
-			if n, err := strconv.Atoi(v); err != nil || n <= 0 {
-				setFlash(w, "danger", "New ID must be a positive integer.")
-				http.Redirect(w, r, "/nodes", http.StatusSeeOther)
-				return
+			submitted := r.FormValue(formName)
+			// If the form didn't carry this column at all, leave it alone.
+			if _, present := r.PostForm[formName]; !present {
+				continue
 			}
-			dbFields["id"] = v
+			if submitted == currentRow[col] {
+				continue
+			}
+			if col == "id" {
+				if n, err := strconv.Atoi(submitted); err != nil || n <= 0 {
+					setFlash(w, "danger", "New ID must be a positive integer.")
+					http.Redirect(w, r, "/nodes", http.StatusSeeOther)
+					return
+				}
+			}
+			dbFields[col] = submitted
 		}
 		if len(dbFields) > 0 {
-			n, err := headscaledb.New(hdbCfg).UpdateNodeFields(id, dbFields)
+			n, err := hdbClient.UpdateNodeFields(id, dbFields)
 			if err != nil {
 				if firstErr == nil {
 					firstErr = fmt.Errorf("db update: %w", err)
 				}
 			} else {
-				keys := make([]string, 0, len(dbFields))
+				cols := make([]string, 0, len(dbFields))
 				for k := range dbFields {
-					keys = append(keys, k)
+					cols = append(cols, k)
 				}
-				changes = append(changes, fmt.Sprintf("db: %s (rows=%d)", strings.Join(keys, ","), n))
+				changes = append(changes, fmt.Sprintf("db: %s (rows=%d)", strings.Join(cols, ","), n))
 				if r.FormValue("restart_after") == "on" {
-					out, err := headscaledb.New(hdbCfg).RestartHeadscale()
+					out, err := hdbClient.RestartHeadscale()
 					if err != nil {
 						changes = append(changes, "restart FAILED: "+err.Error()+" "+strings.TrimSpace(out))
 					} else {

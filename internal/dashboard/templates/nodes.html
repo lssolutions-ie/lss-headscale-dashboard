@@ -65,8 +65,9 @@
 
 {{$root := .}}
 {{range .Nodes}}
+{{$db := index $root.DBNodes .ID}}
 <div class="modal modal-lg" id="edit-{{.ID}}" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <form class="modal-content" method="post" action="/nodes/edit">
             <input type="hidden" name="csrf" value="{{$.CSRF}}">
             <input type="hidden" name="id" value="{{.ID}}">
@@ -80,58 +81,96 @@
             </div>
 
             <div class="modal-body">
+
+                <div class="mb-2 d-flex align-items-center gap-2">
+                    <strong>Direct DB columns</strong>
+                    {{if $root.DBEnabled}}<span class="badge bg-success">enabled</span>
+                    {{else}}<span class="badge badge-soft-secondary">disabled — <a href="/settings#headscale-db">configure</a></span>{{end}}
+                    {{if and $root.DBEnabled (not $db)}}<span class="text-muted small">(row not found in DB)</span>{{end}}
+                </div>
+
+                {{if and $root.DBEnabled $db}}
+
+                <!-- Identity -->
                 <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label">Display name <small class="text-muted">(given_name, via API)</small></label>
-                        <input type="text" name="given_name" class="form-control" value="{{.GivenName}}" maxlength="63">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Owner user <small class="text-muted">(via API)</small></label>
-                        {{$current := .User.Name}}
-                        <select name="user" class="form-select">
-                            {{range $root.UsersList}}<option value="{{.}}" {{if eq . $current}}selected{{end}}>{{.}}</option>{{end}}
-                        </select>
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label">Forced tags <small class="text-muted">(via API)</small></label>
-                        <input type="text" name="tags" class="form-control" placeholder="tag:server, tag:db" value="{{range $i, $t := .ForcedTags}}{{if $i}}, {{end}}{{$t}}{{end}}">
-                        <small class="form-hint">Comma-separated. Each must start with <code>tag:</code>. Empty to clear.</small>
+                    <div class="col-md-4"><label class="form-label">id</label>
+                        <input type="number" name="new_id" class="form-control" value="{{index $db "id"}}" min="1"></div>
+                    <div class="col-md-4"><label class="form-label">hostname</label>
+                        <input type="text" name="hostname" class="form-control" value="{{index $db "hostname"}}"></div>
+                    <div class="col-md-4"><label class="form-label">given_name</label>
+                        <input type="text" name="given_name" class="form-control" value="{{index $db "given_name"}}" maxlength="63"></div>
+                </div>
+
+                <!-- Network -->
+                <div class="row g-3 mt-1">
+                    <div class="col-md-6"><label class="form-label">ipv4</label>
+                        <input type="text" name="ipv4" class="form-control" value="{{index $db "ipv4"}}"></div>
+                    <div class="col-md-6"><label class="form-label">ipv6</label>
+                        <input type="text" name="ipv6" class="form-control" value="{{index $db "ipv6"}}"></div>
+                    <div class="col-12"><label class="form-label">endpoints <small class="text-muted">(JSON array)</small></label>
+                        <textarea name="endpoints" class="form-control font-monospace" rows="2" spellcheck="false">{{index $db "endpoints"}}</textarea></div>
+                </div>
+
+                <!-- Tags & routes (DB column tags + approved_routes) -->
+                <div class="row g-3 mt-1">
+                    <div class="col-12"><label class="form-label">tags <small class="text-muted">(JSON array, raw column)</small></label>
+                        <input type="text" name="tags" class="form-control font-monospace" value="{{index $db "tags"}}"></div>
+                    <div class="col-12"><label class="form-label">approved_routes <small class="text-muted">(JSON array)</small></label>
+                        <textarea name="approved_routes" class="form-control font-monospace" rows="2" spellcheck="false">{{index $db "approved_routes"}}</textarea></div>
+                </div>
+
+                <!-- User & auth -->
+                <div class="row g-3 mt-1">
+                    <div class="col-md-4"><label class="form-label">user_id</label>
+                        <input type="number" name="user_id" class="form-control" value="{{index $db "user_id"}}"></div>
+                    <div class="col-md-4"><label class="form-label">register_method</label>
+                        <input type="text" name="register_method" class="form-control" value="{{index $db "register_method"}}"></div>
+                    <div class="col-md-4"><label class="form-label">auth_key_id</label>
+                        <input type="text" name="auth_key_id" class="form-control" value="{{index $db "auth_key_id"}}"></div>
+                </div>
+
+                <!-- Crypto keys (collapsed) -->
+                <div class="mt-3">
+                    <a class="text-decoration-none" data-bs-toggle="collapse" href="#keys-{{.ID}}">▸ Crypto keys (machine_key / node_key / disco_key) — danger</a>
+                </div>
+                <div class="collapse" id="keys-{{.ID}}">
+                    <div class="row g-2 mt-1">
+                        <div class="col-12"><label class="form-label">machine_key</label>
+                            <input type="text" name="machine_key" class="form-control font-monospace" value="{{index $db "machine_key"}}" spellcheck="false"></div>
+                        <div class="col-12"><label class="form-label">node_key</label>
+                            <input type="text" name="node_key" class="form-control font-monospace" value="{{index $db "node_key"}}" spellcheck="false"></div>
+                        <div class="col-12"><label class="form-label">disco_key</label>
+                            <input type="text" name="disco_key" class="form-control font-monospace" value="{{index $db "disco_key"}}" spellcheck="false"></div>
                     </div>
                 </div>
 
-                <hr>
-
-                <div class="mb-2"><strong>Direct DB fields</strong>
-                    {{if $root.DBEnabled}}<span class="badge bg-success ms-2">enabled</span>
-                    {{else}}<span class="badge badge-soft-secondary ms-2">disabled — <a href="/settings#headscale-db">configure</a></span>{{end}}
+                <!-- Timestamps -->
+                <div class="row g-3 mt-1">
+                    <div class="col-md-6"><label class="form-label">last_seen</label>
+                        <input type="text" name="last_seen" class="form-control font-monospace" value="{{index $db "last_seen"}}"></div>
+                    <div class="col-md-6"><label class="form-label">expiry</label>
+                        <input type="text" name="expiry" class="form-control font-monospace" value="{{index $db "expiry"}}"></div>
+                    <div class="col-md-4"><label class="form-label">created_at</label>
+                        <input type="text" name="created_at" class="form-control font-monospace" value="{{index $db "created_at"}}"></div>
+                    <div class="col-md-4"><label class="form-label">updated_at</label>
+                        <input type="text" name="updated_at" class="form-control font-monospace" value="{{index $db "updated_at"}}"></div>
+                    <div class="col-md-4"><label class="form-label">deleted_at</label>
+                        <input type="text" name="deleted_at" class="form-control font-monospace" value="{{index $db "deleted_at"}}"></div>
                 </div>
 
-                <div class="row g-3 {{if not $root.DBEnabled}}opacity-50{{end}}">
-                    <div class="col-md-4">
-                        <label class="form-label">Node ID <small class="text-muted">(primary key)</small></label>
-                        <input type="number" name="new_id" class="form-control" value="{{.ID}}" min="1" {{if not $root.DBEnabled}}disabled{{end}}>
-                        <small class="form-hint text-muted">Headscale 0.28+: routes live inline on this row, so an ID change won't orphan anything. Headscale will be restarted to refresh its NetMap.</small>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">IPv4</label>
-                        <input type="text" name="ipv4" class="form-control" value="{{range .IPAddrs}}{{if not (contains . ":")}}{{.}}{{end}}{{end}}" placeholder="100.64.0.42" {{if not $root.DBEnabled}}disabled{{end}}>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">IPv6</label>
-                        <input type="text" name="ipv6" class="form-control" value="{{range .IPAddrs}}{{if (contains . ":")}}{{.}}{{end}}{{end}}" placeholder="fd7a:115c:a1e0::42" {{if not $root.DBEnabled}}disabled{{end}}>
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label">Raw hostname <small class="text-muted">(machine-reported)</small></label>
-                        <input type="text" name="hostname" class="form-control" value="{{.Name}}" {{if not $root.DBEnabled}}disabled{{end}}>
-                    </div>
+                <!-- Host info (large JSON blob) -->
+                <div class="row g-3 mt-1">
+                    <div class="col-12"><label class="form-label">host_info <small class="text-muted">(JSON blob)</small></label>
+                        <textarea name="host_info" class="form-control font-monospace" rows="4" spellcheck="false">{{index $db "host_info"}}</textarea></div>
                 </div>
 
-                {{if $root.DBEnabled}}
                 <div class="form-check mt-3">
                     <input type="checkbox" name="restart_after" class="form-check-input" id="restart-{{.ID}}" checked>
-                    <label class="form-check-label" for="restart-{{.ID}}">Restart Headscale after save (required for DB-only changes to take effect)</label>
+                    <label class="form-check-label" for="restart-{{.ID}}">Restart Headscale after save</label>
                 </div>
+
                 {{end}}
+
             </div>
 
             <div class="modal-footer">
