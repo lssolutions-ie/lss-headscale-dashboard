@@ -182,7 +182,7 @@
                     <td><span class="text-muted small">{{.LastSeen}}</span></td>
                     <td>
                         <div class="dropdown">
-                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">Actions</button>
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" data-bs-strategy="fixed">Actions</button>
                             <div class="dropdown-menu dropdown-menu-end">
                                 <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#edit-{{.ID}}">Edit…</button>
                                 <form method="post" action="/nodes/expire" class="m-0" onsubmit="return confirm('Expire {{.GivenName}}?');">
