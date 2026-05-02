@@ -32,10 +32,19 @@
                             </div>
                             {{end}}
                         </div>
-                        <div class="col-md-4 form-check ms-3"><input type="checkbox" name="reusable" id="reg-reusable" class="form-check-input"><label class="form-check-label" for="reg-reusable">Reusable</label></div>
-                        <div class="col-md-4 form-check"><input type="checkbox" name="ephemeral" id="reg-ephemeral" class="form-check-input"><label class="form-check-label" for="reg-ephemeral">Ephemeral</label></div>
-                        <div class="col-md-4"><label class="form-label">Expiration <small class="text-muted">(optional, ISO-8601)</small></label>
-                            <input type="text" name="expiration" class="form-control" placeholder="2026-12-31T23:59:59Z">
+                        <div class="col-md-6 form-check ms-3"><input type="checkbox" name="reusable" id="reg-reusable" class="form-check-input"><label class="form-check-label" for="reg-reusable">Reusable</label></div>
+                        <div class="col-md-5 form-check"><input type="checkbox" name="ephemeral" id="reg-ephemeral" class="form-check-input"><label class="form-check-label" for="reg-ephemeral">Ephemeral (auto-removed when offline)</label></div>
+                        <div class="col-12">
+                            <label class="form-label">Key expiration <small class="text-muted">(optional — when this auth key stops accepting new registrations)</small></label>
+                            <div class="input-group">
+                                <input type="datetime-local" name="expiration" class="form-control" id="reg-exp">
+                                <button type="button" class="btn btn-outline-secondary" data-exp="1h">+1h</button>
+                                <button type="button" class="btn btn-outline-secondary" data-exp="24h">+24h</button>
+                                <button type="button" class="btn btn-outline-secondary" data-exp="7d">+7d</button>
+                                <button type="button" class="btn btn-outline-secondary" data-exp="30d">+30d</button>
+                                <button type="button" class="btn btn-outline-secondary" data-exp="">Never</button>
+                            </div>
+                            <small class="form-hint">Affects only this auth key. Already-registered nodes have their own <code>expiry</code> on the row (edit there for session expiry).</small>
                         </div>
                         <div class="col-12"><label class="form-label">Login server URL <small class="text-muted">(<code>--login-server</code>)</small></label>
                             <input type="text" name="login_server" class="form-control" value="{{.ClientURL}}" placeholder="https://headscale.example.com" required>
@@ -77,6 +86,9 @@
         e.preventDefault();
         errBox.style.display = 'none';
         const fd = new FormData(form);
+        // datetime-local is local time without TZ — convert to ISO-8601 UTC for Headscale.
+        const localExp = fd.get('expiration');
+        if (localExp) fd.set('expiration', new Date(localExp).toISOString());
         try {
             const res = await fetch('/nodes/register', { method: 'POST', body: fd });
             const data = await res.json();
@@ -117,6 +129,20 @@
         });
     });
     tagInput?.addEventListener('input', refreshChipState);
+
+    // Expiration presets: relative offsets from "now", written as
+    // datetime-local ("YYYY-MM-DDTHH:MM" in the user's local tz).
+    const expInput = document.getElementById('reg-exp');
+    document.querySelectorAll('[data-exp]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const v = btn.dataset.exp;
+            if (!v) { expInput.value = ''; return; }
+            const ms = { '1h': 3.6e6, '24h': 8.64e7, '7d': 6.048e8, '30d': 2.592e9 }[v] || 0;
+            const d = new Date(Date.now() + ms);
+            const pad = n => String(n).padStart(2, '0');
+            expInput.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        });
+    });
 })();
 </script>
 
