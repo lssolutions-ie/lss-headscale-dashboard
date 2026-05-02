@@ -38,21 +38,19 @@
                     <td>{{if .Online}}<span class="badge bg-success">online</span>{{else}}<span class="badge badge-soft-secondary">offline</span>{{end}}</td>
                     <td><span class="text-muted small">{{.LastSeen}}</span></td>
                     <td>
-                        <div class="btn-list">
-                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#edit-{{.ID}}">Edit</button>
-                            <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">…</button>
-                                <div class="dropdown-menu dropdown-menu-end">
-                                    <form method="post" action="/nodes/expire" class="m-0" onsubmit="return confirm('Expire {{.GivenName}}?');">
-                                        <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}">
-                                        <button class="dropdown-item">Expire</button>
-                                    </form>
-                                    <div class="dropdown-divider"></div>
-                                    <form method="post" action="/nodes/delete" class="m-0" onsubmit="return confirm('Delete {{.GivenName}}? This is permanent.');">
-                                        <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}">
-                                        <button class="dropdown-item text-danger">Delete</button>
-                                    </form>
-                                </div>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">Actions</button>
+                            <div class="dropdown-menu dropdown-menu-end">
+                                <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#edit-{{.ID}}">Edit…</button>
+                                <form method="post" action="/nodes/expire" class="m-0" onsubmit="return confirm('Expire {{.GivenName}}?');">
+                                    <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}">
+                                    <button class="dropdown-item">Expire</button>
+                                </form>
+                                <div class="dropdown-divider"></div>
+                                <form method="post" action="/nodes/delete" class="m-0" onsubmit="return confirm('Delete {{.GivenName}}? This is permanent.');">
+                                    <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}">
+                                    <button class="dropdown-item text-danger">Delete</button>
+                                </form>
                             </div>
                         </div>
                     </td>
@@ -89,8 +87,9 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Owner user <small class="text-muted">(via API)</small></label>
+                        {{$current := .User.Name}}
                         <select name="user" class="form-select">
-                            {{range $root.UsersList}}<option value="{{.}}" {{if eq . $.User.Name}}selected{{end}}>{{.}}</option>{{end}}
+                            {{range $root.UsersList}}<option value="{{.}}" {{if eq . $current}}selected{{end}}>{{.}}</option>{{end}}
                         </select>
                     </div>
                     <div class="col-12">
