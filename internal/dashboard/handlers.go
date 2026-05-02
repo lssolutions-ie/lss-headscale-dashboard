@@ -456,24 +456,101 @@ func (h *Handler) nodesRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := buildRegisterCommand(loginServer, key.Key, hostname, tags)
+	cmd := buildRegisterCommand(registerOpts{
+		LoginServer:       loginServer,
+		Key:               key.Key,
+		Hostname:          hostname,
+		Tags:              tags,
+		AcceptDNS:         strings.TrimSpace(r.FormValue("accept_dns")),
+		AcceptRoutes:      strings.TrimSpace(r.FormValue("accept_routes")),
+		AdvertiseExitNode: r.FormValue("advertise_exit_node") == "on",
+		AdvertiseRoutes:   strings.TrimSpace(r.FormValue("advertise_routes")),
+		ExitNode:          strings.TrimSpace(r.FormValue("exit_node")),
+		ExitNodeLAN:       r.FormValue("exit_node_lan") == "on",
+		Reset:             r.FormValue("reset") == "on",
+		ForceReauth:       r.FormValue("force_reauth") == "on",
+		Unattended:        r.FormValue("unattended") == "on",
+		ShieldsUp:         r.FormValue("shields_up") == "on",
+		SSH:               r.FormValue("ssh") == "on",
+		Operator:          strings.TrimSpace(r.FormValue("operator")),
+		Timeout:           strings.TrimSpace(r.FormValue("timeout")),
+	})
 	audit.Write(h.db, actorID(r), currentIP(r), audit.ActionPreAuthKeyCreate, user, map[string]any{
 		"reusable": reusable, "ephemeral": ephemeral, "tags": tags, "via": "register-node",
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "command": cmd, "key": key.Key})
 }
 
-func buildRegisterCommand(loginServer, key, hostname string, tags []string) string {
+type registerOpts struct {
+	LoginServer       string
+	Key               string
+	Hostname          string
+	Tags              []string
+	AcceptDNS         string // "" | "true" | "false"
+	AcceptRoutes      string
+	AdvertiseExitNode bool
+	AdvertiseRoutes   string
+	ExitNode          string
+	ExitNodeLAN       bool
+	Reset             bool
+	ForceReauth       bool
+	Unattended        bool
+	ShieldsUp         bool
+	SSH               bool
+	Operator          string
+	Timeout           string
+}
+
+func buildRegisterCommand(o registerOpts) string {
 	parts := []string{
 		"sudo tailscale up",
-		"  --login-server=" + loginServer,
-		"  --authkey=" + key,
+		"  --login-server=" + o.LoginServer,
+		"  --authkey=" + o.Key,
 	}
-	if hostname != "" {
-		parts = append(parts, "  --hostname="+shellArg(hostname))
+	if o.Hostname != "" {
+		parts = append(parts, "  --hostname="+shellArg(o.Hostname))
 	}
-	if len(tags) > 0 {
-		parts = append(parts, "  --advertise-tags="+strings.Join(tags, ","))
+	if len(o.Tags) > 0 {
+		parts = append(parts, "  --advertise-tags="+strings.Join(o.Tags, ","))
+	}
+	if o.AcceptDNS != "" {
+		parts = append(parts, "  --accept-dns="+o.AcceptDNS)
+	}
+	if o.AcceptRoutes != "" {
+		parts = append(parts, "  --accept-routes="+o.AcceptRoutes)
+	}
+	if o.AdvertiseExitNode {
+		parts = append(parts, "  --advertise-exit-node")
+	}
+	if o.AdvertiseRoutes != "" {
+		parts = append(parts, "  --advertise-routes="+o.AdvertiseRoutes)
+	}
+	if o.ExitNode != "" {
+		parts = append(parts, "  --exit-node="+shellArg(o.ExitNode))
+	}
+	if o.ExitNodeLAN {
+		parts = append(parts, "  --exit-node-allow-lan-access")
+	}
+	if o.Reset {
+		parts = append(parts, "  --reset")
+	}
+	if o.ForceReauth {
+		parts = append(parts, "  --force-reauth")
+	}
+	if o.Unattended {
+		parts = append(parts, "  --unattended")
+	}
+	if o.ShieldsUp {
+		parts = append(parts, "  --shields-up")
+	}
+	if o.SSH {
+		parts = append(parts, "  --ssh")
+	}
+	if o.Operator != "" {
+		parts = append(parts, "  --operator="+shellArg(o.Operator))
+	}
+	if o.Timeout != "" {
+		parts = append(parts, "  --timeout="+o.Timeout)
 	}
 	return strings.Join(parts, " \\\n")
 }
