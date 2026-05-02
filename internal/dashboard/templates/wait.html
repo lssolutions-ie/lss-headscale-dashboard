@@ -1,0 +1,43 @@
+{{define "title"}}Headscale restarting…{{end}}
+{{define "content"}}
+<div class="d-flex flex-column align-items-center justify-content-center" style="min-height: 50vh;">
+    <div class="spinner-border text-primary mb-3" style="width:3rem;height:3rem" role="status"></div>
+    <h2 class="page-title m-0">Headscale is restarting</h2>
+    <p class="text-muted mt-2 mb-3" id="wait-msg">Reconnecting to <code>{{.Address}}</code> …</p>
+    <p id="wait-elapsed" class="small text-muted">0s elapsed</p>
+    <div id="wait-fail" class="alert alert-warning mt-3" style="display:none">
+        Headscale didn't come back within 30s. <a href="/nodes" class="alert-link">Reload anyway</a> or check
+        <code>journalctl -u headscale -n 50</code>.
+    </div>
+</div>
+
+<script>
+(function () {
+    const start = Date.now();
+    const elapsed = document.getElementById('wait-elapsed');
+    const fail = document.getElementById('wait-fail');
+    const target = "{{.Redirect}}";
+    let attempts = 0;
+    const max = 30;
+
+    function tick() {
+        elapsed.textContent = Math.round((Date.now() - start) / 1000) + 's elapsed';
+    }
+    setInterval(tick, 250);
+
+    async function poll() {
+        if (attempts >= max) { fail.style.display = ''; return; }
+        attempts++;
+        try {
+            const r = await fetch('/headscale/ready', { cache: 'no-store' });
+            if (r.ok) {
+                const j = await r.json();
+                if (j.ready) { location.replace(target); return; }
+            }
+        } catch (_) { /* keep polling */ }
+        setTimeout(poll, 1000);
+    }
+    poll();
+})();
+</script>
+{{end}}

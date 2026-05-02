@@ -103,6 +103,8 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/headscale-db/test", h.settingsTestHeadscaleDB)
 	mux.HandleFunc("POST /settings/password", h.settingsPassword)
 	mux.HandleFunc("POST /headscale/restart", h.headscaleRestart)
+	mux.HandleFunc("GET /headscale/ready", h.headscaleReady)
+	mux.HandleFunc("GET /nodes/wait", h.nodesWait)
 }
 
 // ----- Helpers -----
@@ -508,6 +510,7 @@ func (h *Handler) nodesEdit(w http.ResponseWriter, r *http.Request) {
 
 	var changes []string
 	var firstErr error
+	var restarted bool
 
 	// DB: every whitelisted column. Values come straight from the form;
 	// we diff against the current DB row so only changed columns are written.
@@ -562,6 +565,7 @@ func (h *Handler) nodesEdit(w http.ResponseWriter, r *http.Request) {
 						changes = append(changes, "restart FAILED: "+err.Error()+" "+strings.TrimSpace(out))
 					} else {
 						changes = append(changes, "headscale restarted")
+						restarted = true
 					}
 				}
 			}
@@ -577,6 +581,10 @@ func (h *Handler) nodesEdit(w http.ResponseWriter, r *http.Request) {
 		setFlash(w, "info", "No changes.")
 	} else {
 		setFlash(w, "success", "Saved: "+strings.Join(changes, "; "))
+	}
+	if restarted {
+		http.Redirect(w, r, "/nodes/wait?to=/nodes", http.StatusSeeOther)
+		return
 	}
 	http.Redirect(w, r, "/nodes", http.StatusSeeOther)
 }
@@ -645,6 +653,43 @@ func (h *Handler) settingsTestHeadscaleDB(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, "/settings#headscale-db", http.StatusSeeOther)
 }
 
+// headscaleReady returns {"ready": true} if Headscale's API responds.
+// Used by the wait/spinner page to know when to redirect.
+func (h *Handler) headscaleReady(w http.ResponseWriter, r *http.Request) {
+	c, _ := h.headscaleClient(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	if c == nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{"ready": false})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
+	defer cancel()
+	if err := c.Ping(ctx); err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{"ready": false, "error": err.Error()})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ready": true})
+}
+
+// nodesWait renders a spinner page that polls /headscale/ready, then
+// redirects to ?to=/path when Headscale answers.
+func (h *Handler) nodesWait(w http.ResponseWriter, r *http.Request) {
+	bp := h.loadBase(w, r, "nodes")
+	type pageData struct {
+		basePage
+		Address  string
+		Redirect string
+	}
+	pd := pageData{basePage: bp, Redirect: "/nodes"}
+	if to := r.URL.Query().Get("to"); to != "" && strings.HasPrefix(to, "/") {
+		pd.Redirect = to
+	}
+	if hs, _ := settings.GetHeadscale(h.db); hs.Address != "" {
+		pd.Address = hs.Address
+	}
+	h.render(w, "wait.html", pd)
+}
+
 func (h *Handler) headscaleRestart(w http.ResponseWriter, r *http.Request) {
 	if !h.checkCSRF(r) {
 		http.Error(w, "csrf", http.StatusForbidden)
@@ -659,11 +704,12 @@ func (h *Handler) headscaleRestart(w http.ResponseWriter, r *http.Request) {
 	out, err := headscaledb.New(cfg).RestartHeadscale()
 	if err != nil {
 		setFlash(w, "danger", "Restart failed: "+err.Error()+" "+strings.TrimSpace(out))
-	} else {
-		audit.Write(h.db, actorID(r), currentIP(r), audit.ActionSettingsUpdate, "headscale.restart", nil)
-		setFlash(w, "success", "Headscale restarted.")
+		http.Redirect(w, r, "/settings#headscale-db", http.StatusSeeOther)
+		return
 	}
-	http.Redirect(w, r, "/settings#headscale-db", http.StatusSeeOther)
+	audit.Write(h.db, actorID(r), currentIP(r), audit.ActionSettingsUpdate, "headscale.restart", nil)
+	setFlash(w, "success", "Headscale restarted.")
+	http.Redirect(w, r, "/nodes/wait?to=/settings", http.StatusSeeOther)
 }
 
 func uniqueUsersFromNodes(nodes []headscale.Node) []string {
