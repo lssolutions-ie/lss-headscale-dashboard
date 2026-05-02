@@ -19,6 +19,7 @@
             <option value="">All users</option>
             {{range .UsersList}}<option value="{{.}}">{{.}}</option>{{end}}
         </select>
+        {{if not .DBEnabled}}<small class="text-muted ms-auto">DB editing disabled — <a href="/settings#headscale-db">enable</a> to edit IP / hostname</small>{{end}}
     </div>
     <div class="table-responsive">
         <table id="nodes-table" class="table table-compact">
@@ -37,19 +38,21 @@
                     <td>{{if .Online}}<span class="badge bg-success">online</span>{{else}}<span class="badge badge-soft-secondary">offline</span>{{end}}</td>
                     <td><span class="text-muted small">{{.LastSeen}}</span></td>
                     <td>
-                        <div class="dropdown">
-                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">Actions</button>
-                            <div class="dropdown-menu dropdown-menu-end">
-                                <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#tags-{{.ID}}">Manage tags</button>
-                                <form method="post" action="/nodes/expire" class="m-0" onsubmit="return confirm('Expire {{.GivenName}}?');">
-                                    <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}">
-                                    <button class="dropdown-item">Expire</button>
-                                </form>
-                                <div class="dropdown-divider"></div>
-                                <form method="post" action="/nodes/delete" class="m-0" onsubmit="return confirm('Delete {{.GivenName}}? This is permanent.');">
-                                    <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}">
-                                    <button class="dropdown-item text-danger">Delete</button>
-                                </form>
+                        <div class="btn-list">
+                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#edit-{{.ID}}">Edit</button>
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">…</button>
+                                <div class="dropdown-menu dropdown-menu-end">
+                                    <form method="post" action="/nodes/expire" class="m-0" onsubmit="return confirm('Expire {{.GivenName}}?');">
+                                        <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}">
+                                        <button class="dropdown-item">Expire</button>
+                                    </form>
+                                    <div class="dropdown-divider"></div>
+                                    <form method="post" action="/nodes/delete" class="m-0" onsubmit="return confirm('Delete {{.GivenName}}? This is permanent.');">
+                                        <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}">
+                                        <button class="dropdown-item text-danger">Delete</button>
+                                    </form>
+                                </div>
                             </div>
                         </div>
                     </td>
@@ -62,23 +65,75 @@
     </div>
 </div>
 
+{{$root := .}}
 {{range .Nodes}}
-<div class="modal" id="tags-{{.ID}}" tabindex="-1">
-    <div class="modal-dialog">
-        <form class="modal-content" method="post" action="/nodes/tags">
+<div class="modal modal-lg" id="edit-{{.ID}}" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" method="post" action="/nodes/edit">
             <input type="hidden" name="csrf" value="{{$.CSRF}}">
             <input type="hidden" name="id" value="{{.ID}}">
-            <div class="modal-header"><h5 class="modal-title">Tags for {{.GivenName}}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label">Forced tags <small class="text-muted">(admin-applied, must match ACL <code>tagOwners</code>)</small></label>
-                    <input type="text" name="tags" class="form-control" placeholder="tag:server, tag:db" value="{{range $i, $t := .ForcedTags}}{{if $i}}, {{end}}{{$t}}{{end}}">
-                    <small class="form-hint">Comma-separated. Each must start with <code>tag:</code>. Empty to clear.</small>
+
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title m-0">Edit node</h5>
+                    <small class="text-muted">id={{.ID}} · machine_key=<code>{{slice .Name 0 12}}…</code></small>
                 </div>
-                {{if .ValidTags}}<div class="mb-2"><strong>Currently advertised (valid):</strong> {{range $i, $t := .ValidTags}}{{if $i}}, {{end}}<code>{{$t}}</code>{{end}}</div>{{end}}
-                {{if .InvalidTags}}<div class="mb-2 text-danger"><strong>Advertised but rejected by ACL:</strong> {{range $i, $t := .InvalidTags}}{{if $i}}, {{end}}<code>{{$t}}</code>{{end}}</div>{{end}}
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-footer"><button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Save tags</button></div>
+
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Display name <small class="text-muted">(given_name, via API)</small></label>
+                        <input type="text" name="given_name" class="form-control" value="{{.GivenName}}" maxlength="63">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Owner user <small class="text-muted">(via API)</small></label>
+                        <select name="user" class="form-select">
+                            {{range $root.UsersList}}<option value="{{.}}" {{if eq . $.User.Name}}selected{{end}}>{{.}}</option>{{end}}
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Forced tags <small class="text-muted">(via API)</small></label>
+                        <input type="text" name="tags" class="form-control" placeholder="tag:server, tag:db" value="{{range $i, $t := .ForcedTags}}{{if $i}}, {{end}}{{$t}}{{end}}">
+                        <small class="form-hint">Comma-separated. Each must start with <code>tag:</code>. Empty to clear.</small>
+                    </div>
+                </div>
+
+                <hr>
+
+                <div class="mb-2"><strong>Direct DB fields</strong>
+                    {{if $root.DBEnabled}}<span class="badge bg-success ms-2">enabled</span>
+                    {{else}}<span class="badge badge-soft-secondary ms-2">disabled — <a href="/settings#headscale-db">configure</a></span>{{end}}
+                </div>
+
+                <div class="row g-3 {{if not $root.DBEnabled}}opacity-50{{end}}">
+                    <div class="col-md-6">
+                        <label class="form-label">IPv4</label>
+                        <input type="text" name="ipv4" class="form-control" value="{{range .IPAddrs}}{{if not (contains . ":")}}{{.}}{{end}}{{end}}" placeholder="100.64.0.42" {{if not $root.DBEnabled}}disabled{{end}}>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">IPv6</label>
+                        <input type="text" name="ipv6" class="form-control" value="{{range .IPAddrs}}{{if (contains . ":")}}{{.}}{{end}}{{end}}" placeholder="fd7a:115c:a1e0::42" {{if not $root.DBEnabled}}disabled{{end}}>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Raw hostname <small class="text-muted">(machine-reported)</small></label>
+                        <input type="text" name="hostname" class="form-control" value="{{.Name}}" {{if not $root.DBEnabled}}disabled{{end}}>
+                    </div>
+                </div>
+
+                {{if $root.DBEnabled}}
+                <div class="form-check mt-3">
+                    <input type="checkbox" name="restart_after" class="form-check-input" id="restart-{{.ID}}" checked>
+                    <label class="form-check-label" for="restart-{{.ID}}">Restart Headscale after save (required for DB-only changes to take effect)</label>
+                </div>
+                {{end}}
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save changes</button>
+            </div>
         </form>
     </div>
 </div>

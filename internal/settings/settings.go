@@ -14,6 +14,7 @@ const (
 	keySetupComplete = "setup_complete"
 	keySMTP          = "smtp"
 	keyHeadscale     = "headscale"
+	keyHeadscaleDB = "headscale_db"
 )
 
 type SMTP struct {
@@ -31,6 +32,17 @@ type Headscale struct {
 	Address string `json:"address"`  // e.g. http://127.0.0.1:8080
 	APIKey  string `json:"api_key"`
 	TLSSkip bool   `json:"tls_skip"` // skip TLS verify for self-signed
+}
+
+// HeadscaleDB is the local-filesystem path to Headscale's SQLite DB plus the
+// command used to restart Headscale after writing. Used for fields Headscale's
+// HTTP API does not expose (ipv4, ipv6, raw hostname). The dashboard must run
+// on the same host as Headscale and have read/write access to the DB file
+// (via the `headscale` group, which install.sh handles).
+type HeadscaleDB struct {
+	Enabled    bool   `json:"enabled"`
+	Path       string `json:"path"`
+	RestartCmd string `json:"restart_cmd"`
 }
 
 func IsSetupComplete(d *sql.DB) (bool, error) {
@@ -83,4 +95,24 @@ func SaveHeadscale(d *sql.DB, h Headscale) error {
 		return err
 	}
 	return db.SetSetting(d, keyHeadscale, string(b))
+}
+
+func GetHeadscaleDB(d *sql.DB) (HeadscaleDB, error) {
+	var h HeadscaleDB
+	v, ok, err := db.GetSetting(d, keyHeadscaleDB)
+	if err != nil || !ok {
+		return h, err
+	}
+	if err := json.Unmarshal([]byte(v), &h); err != nil {
+		return h, err
+	}
+	return h, nil
+}
+
+func SaveHeadscaleDB(d *sql.DB, h HeadscaleDB) error {
+	b, err := json.Marshal(h)
+	if err != nil {
+		return err
+	}
+	return db.SetSetting(d, keyHeadscaleDB, string(b))
 }

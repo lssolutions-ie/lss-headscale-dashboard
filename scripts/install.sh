@@ -101,6 +101,9 @@ install_systemd() {
         SUPP_GROUPS_LINE="SupplementaryGroups=headscale"
     fi
 
+    # NoNewPrivileges is intentionally NOT set: when co-located with Headscale,
+    # the dashboard uses sudo to run `systemctl restart headscale` after DB
+    # edits, and sudo is a setuid binary that NoNewPrivileges would block.
     cat >"$UNIT" <<EOF
 [Unit]
 Description=LSS Headscale Dashboard
@@ -114,7 +117,6 @@ Group=$SVC_USER
 ExecStart=$PREFIX/lss-headscale-dashboard --config $CONF_DIR/config.yaml
 Restart=on-failure
 RestartSec=5
-NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
@@ -153,6 +155,25 @@ open_firewall() {
     if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | head -1 | grep -q "Status: active"; then
         echo "  · ufw is active, allowing $PORT/tcp"
         ufw allow "$PORT/tcp" >/dev/null
+    fi
+}
+
+# If Headscale is on this host, allow the dashboard service user to:
+#   - read/write Headscale's SQLite DB (group access via the headscale group;
+#     ensure_user already added the user to that group when present)
+#   - restart Headscale via sudo (NoNewPrivileges is intentionally off in the unit)
+configure_headscale_colocation() {
+    if ! systemctl list-unit-files headscale.service >/dev/null 2>&1; then
+        return
+    fi
+    if [ -d /etc/sudoers.d ]; then
+        SUDOERS=/etc/sudoers.d/lss-headscale-dashboard
+        cat >"$SUDOERS" <<EOF
+# Managed by lss-headscale-dashboard installer.
+$SVC_USER ALL=(root) NOPASSWD: /bin/systemctl restart headscale.service, /usr/bin/systemctl restart headscale.service, /bin/systemctl restart headscale, /usr/bin/systemctl restart headscale
+EOF
+        chmod 0440 "$SUDOERS"
+        echo "  · headscale.service detected — sudoers drop-in installed"
     fi
 }
 
@@ -210,6 +231,7 @@ install_binary
 install_systemd
 cleanup_old_nginx_site
 open_firewall
+configure_headscale_colocation
 install_fail2ban
 health_check
 

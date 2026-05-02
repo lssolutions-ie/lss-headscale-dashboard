@@ -29,6 +29,32 @@
     </div>
 
     <div class="col-md-6">
+        <div class="card" id="headscale-db">
+            <div class="card-header"><h3 class="card-title">Headscale local DB <small class="text-muted ms-2">(co-located only)</small></h3></div>
+            <div class="card-body">
+                <p class="text-muted small mb-2">Lets the dashboard edit fields the API doesn't expose (<code>ipv4</code>, <code>ipv6</code>, <code>hostname</code>) and restart Headscale so changes take effect. Requires the dashboard service user to be in the <code>headscale</code> group and a sudoers entry for <code>systemctl restart headscale</code> (the installer adds both when Headscale is detected on the host).</p>
+                <form method="post" action="/settings/headscale-db">
+                    <input type="hidden" name="csrf" value="{{.CSRF}}">
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" name="enabled" class="form-check-input" id="hs_db_enabled" {{if .HeadscaleDB.Enabled}}checked{{end}}>
+                        <label class="form-check-label" for="hs_db_enabled">Enable local DB editing</label>
+                    </div>
+                    <div class="mb-3"><label class="form-label">SQLite path</label>
+                        <input type="text" name="path" class="form-control" value="{{.HeadscaleDB.Path}}">
+                    </div>
+                    <div class="mb-3"><label class="form-label">Restart command</label>
+                        <input type="text" name="restart_cmd" class="form-control" value="{{.HeadscaleDB.RestartCmd}}">
+                        <small class="form-hint">Run after a DB write so Headscale reloads its in-memory NetMap.</small>
+                    </div>
+                    <button class="btn btn-primary">Save</button>
+                    <button class="btn btn-outline-secondary" formaction="/settings/headscale-db/test">Test read</button>
+                    <button class="btn btn-outline-warning" formaction="/headscale/restart" formmethod="post" onclick="return confirm('Restart Headscale now?');">Restart Headscale</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
         <div class="card" id="smtp">
             <div class="card-header"><h3 class="card-title">SMTP</h3></div>
             <div class="card-body">

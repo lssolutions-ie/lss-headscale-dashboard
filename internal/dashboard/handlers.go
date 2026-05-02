@@ -7,6 +7,7 @@ import (
 	"embed"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/audit"
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/auth"
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/headscale"
+	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/headscaledb"
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/settings"
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/smtp"
 )
@@ -34,8 +36,13 @@ type Handler struct {
 	tmpl *template.Template
 }
 
+var templateFuncs = template.FuncMap{
+	"contains":  strings.Contains,
+	"hasPrefix": strings.HasPrefix,
+}
+
 func New(d *sql.DB, log *slog.Logger) (*Handler, error) {
-	t, err := template.ParseFS(TemplateFS, TemplateGlob)
+	t, err := template.New("dashboard").Funcs(templateFuncs).ParseFS(TemplateFS, TemplateGlob)
 	if err != nil {
 		return nil, err
 	}
@@ -72,6 +79,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /nodes/expire", h.nodesExpire)
 	mux.HandleFunc("POST /nodes/delete", h.nodesDelete)
 	mux.HandleFunc("POST /nodes/tags", h.nodesTags)
+	mux.HandleFunc("POST /nodes/edit", h.nodesEdit)
 	mux.HandleFunc("GET /preauthkeys", h.preAuthKeys)
 	mux.HandleFunc("POST /preauthkeys/create", h.preAuthKeysCreate)
 	mux.HandleFunc("POST /preauthkeys/expire", h.preAuthKeysExpire)
@@ -82,7 +90,10 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/headscale/test", h.settingsTestHeadscale)
 	mux.HandleFunc("POST /settings/smtp", h.settingsSaveSMTP)
 	mux.HandleFunc("POST /settings/smtp/test", h.settingsTestSMTP)
+	mux.HandleFunc("POST /settings/headscale-db", h.settingsSaveHeadscaleDB)
+	mux.HandleFunc("POST /settings/headscale-db/test", h.settingsTestHeadscaleDB)
 	mux.HandleFunc("POST /settings/password", h.settingsPassword)
+	mux.HandleFunc("POST /headscale/restart", h.headscaleRestart)
 }
 
 // ----- Helpers -----
@@ -314,8 +325,12 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 		basePage
 		Nodes     []headscale.Node
 		UsersList []string
+		DBEnabled bool
 	}
 	pd := pageData{basePage: bp}
+	if hdb, _ := settings.GetHeadscaleDB(h.db); hdb.Enabled && hdb.Path != "" {
+		pd.DBEnabled = true
+	}
 	c, errStr := h.headscaleClient(r.Context())
 	if c == nil {
 		pd.HeadscaleError = errStr
@@ -362,6 +377,241 @@ func (h *Handler) nodesTags(w http.ResponseWriter, r *http.Request) {
 		setFlash(w, "success", "Tags updated.")
 	}
 	http.Redirect(w, r, "/nodes", http.StatusSeeOther)
+}
+
+// nodesEdit handles the unified Edit Node form: API-managed fields
+// (given_name, tags, owner user) and DB-managed fields (ipv4/ipv6/hostname).
+func (h *Handler) nodesEdit(w http.ResponseWriter, r *http.Request) {
+	if !h.checkCSRF(r) {
+		http.Error(w, "csrf", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	id := r.FormValue("id")
+	if id == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+
+	c, errStr := h.headscaleClient(r.Context())
+	if c == nil {
+		setFlash(w, "danger", errStr)
+		http.Redirect(w, r, "/nodes", http.StatusSeeOther)
+		return
+	}
+
+	// Locate the current node for diffing.
+	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	defer cancel()
+	currentList, err := c.ListNodes(ctx, "")
+	if err != nil {
+		setFlash(w, "danger", "List failed: "+err.Error())
+		http.Redirect(w, r, "/nodes", http.StatusSeeOther)
+		return
+	}
+	var current *headscale.Node
+	for i := range currentList {
+		if currentList[i].ID == id {
+			current = &currentList[i]
+			break
+		}
+	}
+	if current == nil {
+		setFlash(w, "danger", "Node not found.")
+		http.Redirect(w, r, "/nodes", http.StatusSeeOther)
+		return
+	}
+
+	var changes []string
+	var firstErr error
+
+	// API: rename (given_name)
+	wantName := strings.TrimSpace(r.FormValue("given_name"))
+	if wantName != "" && wantName != current.GivenName {
+		if err := c.RenameNode(ctx, id, wantName); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+		} else {
+			changes = append(changes, "rename "+current.GivenName+" → "+wantName)
+		}
+	}
+
+	// API: tags
+	wantTags := splitCSV(r.FormValue("tags"))
+	for _, t := range wantTags {
+		if !strings.HasPrefix(t, "tag:") {
+			setFlash(w, "danger", "Each tag must start with 'tag:'. Got: "+t)
+			http.Redirect(w, r, "/nodes", http.StatusSeeOther)
+			return
+		}
+	}
+	if !sameStringSlice(wantTags, current.ForcedTags) {
+		if err := c.SetNodeTags(ctx, id, wantTags); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+		} else {
+			changes = append(changes, "tags")
+		}
+	}
+
+	// API: move user
+	wantUser := strings.TrimSpace(r.FormValue("user"))
+	if wantUser != "" && wantUser != current.User.Name {
+		if err := c.MoveNodeToUser(ctx, id, wantUser); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+		} else {
+			changes = append(changes, "user "+current.User.Name+" → "+wantUser)
+		}
+	}
+
+	// DB: ipv4 / ipv6 / hostname
+	hdbCfg, _ := settings.GetHeadscaleDB(h.db)
+	if hdbCfg.Enabled && hdbCfg.Path != "" {
+		dbFields := map[string]string{}
+		var curV4, curV6 string
+		for _, ip := range current.IPAddrs {
+			if strings.Contains(ip, ":") {
+				curV6 = ip
+			} else {
+				curV4 = ip
+			}
+		}
+		if v := strings.TrimSpace(r.FormValue("ipv4")); v != curV4 {
+			dbFields["ipv4"] = v
+		}
+		if v := strings.TrimSpace(r.FormValue("ipv6")); v != curV6 {
+			dbFields["ipv6"] = v
+		}
+		if v := strings.TrimSpace(r.FormValue("hostname")); v != current.Name {
+			dbFields["hostname"] = v
+		}
+		if len(dbFields) > 0 {
+			n, err := headscaledb.New(hdbCfg).UpdateNodeFields(id, dbFields)
+			if err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("db update: %w", err)
+				}
+			} else {
+				keys := make([]string, 0, len(dbFields))
+				for k := range dbFields {
+					keys = append(keys, k)
+				}
+				changes = append(changes, fmt.Sprintf("db: %s (rows=%d)", strings.Join(keys, ","), n))
+				if r.FormValue("restart_after") == "on" {
+					out, err := headscaledb.New(hdbCfg).RestartHeadscale()
+					if err != nil {
+						changes = append(changes, "restart FAILED: "+err.Error()+" "+strings.TrimSpace(out))
+					} else {
+						changes = append(changes, "headscale restarted")
+					}
+				}
+			}
+		}
+	}
+
+	if len(changes) > 0 {
+		audit.Write(h.db, actorID(r), currentIP(r), audit.ActionSettingsUpdate, "node."+id, map[string]any{"changes": changes})
+	}
+	if firstErr != nil {
+		setFlash(w, "danger", "Some changes failed: "+firstErr.Error()+". Applied: "+strings.Join(changes, "; "))
+	} else if len(changes) == 0 {
+		setFlash(w, "info", "No changes.")
+	} else {
+		setFlash(w, "success", "Saved: "+strings.Join(changes, "; "))
+	}
+	http.Redirect(w, r, "/nodes", http.StatusSeeOther)
+}
+
+func sameStringSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	am := map[string]bool{}
+	for _, s := range a {
+		am[s] = true
+	}
+	for _, s := range b {
+		if !am[s] {
+			return false
+		}
+	}
+	return true
+}
+
+// settingsSaveHeadscaleDB persists the local-DB editing config.
+func (h *Handler) settingsSaveHeadscaleDB(w http.ResponseWriter, r *http.Request) {
+	if !h.checkCSRF(r) {
+		http.Error(w, "csrf", http.StatusForbidden)
+		return
+	}
+	cfg := settings.HeadscaleDB{
+		Enabled:    r.FormValue("enabled") == "on",
+		Path:       strings.TrimSpace(r.FormValue("path")),
+		RestartCmd: strings.TrimSpace(r.FormValue("restart_cmd")),
+	}
+	if cfg.Path == "" {
+		cfg.Path = headscaledb.DefaultPath
+	}
+	if cfg.RestartCmd == "" {
+		cfg.RestartCmd = headscaledb.DefaultRestartCmd
+	}
+	if err := settings.SaveHeadscaleDB(h.db, cfg); err != nil {
+		setFlash(w, "danger", "Save failed: "+err.Error())
+	} else {
+		audit.Write(h.db, actorID(r), currentIP(r), audit.ActionSettingsUpdate, "headscale_db", nil)
+		setFlash(w, "success", "Headscale DB settings saved.")
+	}
+	http.Redirect(w, r, "/settings#headscale-db", http.StatusSeeOther)
+}
+
+func (h *Handler) settingsTestHeadscaleDB(w http.ResponseWriter, r *http.Request) {
+	if !h.checkCSRF(r) {
+		http.Error(w, "csrf", http.StatusForbidden)
+		return
+	}
+	cfg := settings.HeadscaleDB{
+		Enabled:    true,
+		Path:       strings.TrimSpace(r.FormValue("path")),
+		RestartCmd: strings.TrimSpace(r.FormValue("restart_cmd")),
+	}
+	if cfg.Path == "" {
+		cfg.Path = headscaledb.DefaultPath
+	}
+	if err := headscaledb.New(cfg).Test(); err != nil {
+		setFlash(w, "danger", "DB test failed: "+err.Error())
+	} else {
+		_ = settings.SaveHeadscaleDB(h.db, cfg)
+		setFlash(w, "success", "Read OK from "+cfg.Path+". Settings saved.")
+	}
+	http.Redirect(w, r, "/settings#headscale-db", http.StatusSeeOther)
+}
+
+func (h *Handler) headscaleRestart(w http.ResponseWriter, r *http.Request) {
+	if !h.checkCSRF(r) {
+		http.Error(w, "csrf", http.StatusForbidden)
+		return
+	}
+	cfg, _ := settings.GetHeadscaleDB(h.db)
+	if !cfg.Enabled {
+		setFlash(w, "warning", "Local DB editing not enabled.")
+		http.Redirect(w, r, "/settings#headscale-db", http.StatusSeeOther)
+		return
+	}
+	out, err := headscaledb.New(cfg).RestartHeadscale()
+	if err != nil {
+		setFlash(w, "danger", "Restart failed: "+err.Error()+" "+strings.TrimSpace(out))
+	} else {
+		audit.Write(h.db, actorID(r), currentIP(r), audit.ActionSettingsUpdate, "headscale.restart", nil)
+		setFlash(w, "success", "Headscale restarted.")
+	}
+	http.Redirect(w, r, "/settings#headscale-db", http.StatusSeeOther)
 }
 
 func uniqueUsersFromNodes(nodes []headscale.Node) []string {
@@ -525,12 +775,20 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 	bp := h.loadBase(w, r, "settings")
 	type pageData struct {
 		basePage
-		Headscale settings.Headscale
-		SMTP      settings.SMTP
-		Passkeys  []passkeyView
+		Headscale   settings.Headscale
+		HeadscaleDB settings.HeadscaleDB
+		SMTP        settings.SMTP
+		Passkeys    []passkeyView
 	}
 	pd := pageData{basePage: bp}
 	pd.Headscale, _ = settings.GetHeadscale(h.db)
+	pd.HeadscaleDB, _ = settings.GetHeadscaleDB(h.db)
+	if pd.HeadscaleDB.Path == "" {
+		pd.HeadscaleDB.Path = headscaledb.DefaultPath
+	}
+	if pd.HeadscaleDB.RestartCmd == "" {
+		pd.HeadscaleDB.RestartCmd = headscaledb.DefaultRestartCmd
+	}
 	pd.SMTP, _ = settings.GetSMTP(h.db)
 	if pd.SMTP.Port == 0 {
 		pd.SMTP.Port = 587

@@ -174,6 +174,13 @@ func (c *Client) RenameNode(ctx context.Context, id, newName string) error {
 	return c.request(ctx, http.MethodPost, "/api/v1/node/"+id+"/rename/"+newName, nil, nil)
 }
 
+// MoveNodeToUser changes the owning user of a node. The endpoint exists in
+// Headscale's gRPC-Gateway even when not surfaced by the CLI.
+func (c *Client) MoveNodeToUser(ctx context.Context, nodeID, newUser string) error {
+	path := "/api/v1/node/" + nodeID + "/user?user=" + newUser
+	return c.request(ctx, http.MethodPost, path, nil, nil)
+}
+
 // SetNodeTags replaces the forced (admin-applied) tag list on a node.
 // Tags must be in the form "tag:name". Pass nil/empty to clear.
 func (c *Client) SetNodeTags(ctx context.Context, id string, tags []string) error {
