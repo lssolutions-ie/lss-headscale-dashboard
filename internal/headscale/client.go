@@ -72,6 +72,19 @@ type PreAuthKey struct {
 	ACLTags    []string `json:"aclTags,omitempty"`
 }
 
+// IsExpired returns true if the key's expiration is in the past.
+// An empty Expiration string means "never expires".
+func (k PreAuthKey) IsExpired() bool {
+	if k.Expiration == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, k.Expiration)
+	if err != nil {
+		return false
+	}
+	return time.Now().After(t)
+}
+
 func (c *Client) request(ctx context.Context, method, path string, body, out any) error {
 	if c.addr == "" {
 		return errors.New("headscale address not configured")

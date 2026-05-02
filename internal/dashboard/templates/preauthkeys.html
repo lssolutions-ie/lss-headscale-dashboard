@@ -21,6 +21,7 @@
         <select class="form-select form-select-sm" style="max-width:140px" data-filter="#keys-table" data-col="4">
             <option value="">All states</option>
             <option value="active">active</option>
+            <option value="expired">expired</option>
             <option value="used">used</option>
         </select>
         <select class="form-select form-select-sm" style="max-width:160px" data-filter="#keys-table" data-col="1">
@@ -38,11 +39,15 @@
                     <td>{{.User.Name}}</td>
                     <td>{{if .Reusable}}yes{{else}}no{{end}}</td>
                     <td>{{if .Ephemeral}}yes{{else}}no{{end}}</td>
-                    <td>{{if .Used}}<span class="badge badge-soft-secondary">used</span>{{else}}<span class="badge bg-success">active</span>{{end}}</td>
+                    <td>
+                        {{if .Used}}<span class="badge badge-soft-secondary">used</span>
+                        {{else if .IsExpired}}<span class="badge bg-warning">expired</span>
+                        {{else}}<span class="badge bg-success">active</span>{{end}}
+                    </td>
                     <td>{{range .ACLTags}}<span class="tag-badge tag-forced">{{.}}</span>{{end}}</td>
                     <td><span class="text-muted small">{{.Expiration}}</span></td>
                     <td>
-                        {{if not .Used}}
+                        {{if and (not .Used) (not .IsExpired)}}
                         <form method="post" action="/preauthkeys/expire" class="m-0" onsubmit="return confirm('Expire this key?');">
                             <input type="hidden" name="csrf" value="{{$.CSRF}}">
                             <input type="hidden" name="user" value="{{.User.Name}}">
