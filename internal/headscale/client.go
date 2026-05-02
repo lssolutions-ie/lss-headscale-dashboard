@@ -46,15 +46,18 @@ type User struct {
 }
 
 type Node struct {
-	ID         string   `json:"id"`
-	Name       string   `json:"name"`
-	GivenName  string   `json:"givenName"`
-	User       User     `json:"user"`
-	IPAddrs    []string `json:"ipAddresses"`
-	LastSeen   string   `json:"lastSeen"`
-	Online     bool     `json:"online"`
-	Expiry     string   `json:"expiry,omitempty"`
-	RegisterMe string   `json:"registerMethod,omitempty"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	GivenName   string   `json:"givenName"`
+	User        User     `json:"user"`
+	IPAddrs     []string `json:"ipAddresses"`
+	LastSeen    string   `json:"lastSeen"`
+	Online      bool     `json:"online"`
+	Expiry      string   `json:"expiry,omitempty"`
+	RegisterMe  string   `json:"registerMethod,omitempty"`
+	ForcedTags  []string `json:"forcedTags,omitempty"`
+	ValidTags   []string `json:"validTags,omitempty"`
+	InvalidTags []string `json:"invalidTags,omitempty"`
 }
 
 type PreAuthKey struct {
@@ -169,6 +172,36 @@ func (c *Client) ExpireNode(ctx context.Context, id string) error {
 
 func (c *Client) RenameNode(ctx context.Context, id, newName string) error {
 	return c.request(ctx, http.MethodPost, "/api/v1/node/"+id+"/rename/"+newName, nil, nil)
+}
+
+// SetNodeTags replaces the forced (admin-applied) tag list on a node.
+// Tags must be in the form "tag:name". Pass nil/empty to clear.
+func (c *Client) SetNodeTags(ctx context.Context, id string, tags []string) error {
+	if tags == nil {
+		tags = []string{}
+	}
+	body := map[string]any{"tags": tags}
+	return c.request(ctx, http.MethodPost, "/api/v1/node/"+id+"/tags", body, nil)
+}
+
+// Policy / ACLs
+
+type Policy struct {
+	Policy    string `json:"policy"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
+}
+
+func (c *Client) GetPolicy(ctx context.Context) (*Policy, error) {
+	var p Policy
+	if err := c.request(ctx, http.MethodGet, "/api/v1/policy", nil, &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (c *Client) SetPolicy(ctx context.Context, hujson string) error {
+	body := map[string]any{"policy": hujson}
+	return c.request(ctx, http.MethodPut, "/api/v1/policy", body, nil)
 }
 
 // Pre-auth keys

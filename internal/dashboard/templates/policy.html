@@ -1,0 +1,187 @@
+{{define "title"}}ACL policy{{end}}
+{{define "content"}}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="page-title m-0">ACL policy</h2>
+    {{if .Parsed}}<span class="text-muted small">Last updated: {{.UpdatedAt}}</span>{{end}}
+</div>
+
+{{if .HeadscaleError}}
+<div class="alert alert-warning"><strong>Headscale connection:</strong> {{.HeadscaleError}} <a href="/settings#headscale" class="alert-link">Configure</a></div>
+{{else}}
+
+<div class="row row-cards">
+    <div class="col-12">
+        <ul class="nav nav-tabs" role="tablist">
+            <li class="nav-item"><a href="#tab-builder" class="nav-link active" data-bs-toggle="tab">Builder</a></li>
+            <li class="nav-item"><a href="#tab-viewer"  class="nav-link" data-bs-toggle="tab">Structured view</a></li>
+            <li class="nav-item"><a href="#tab-raw"     class="nav-link" data-bs-toggle="tab">Raw HuJSON</a></li>
+        </ul>
+        <div class="tab-content border border-top-0 rounded-bottom bg-white p-3">
+
+            <!-- Builder: quick-add rule + group + tagOwner -->
+            <div class="tab-pane active" id="tab-builder">
+                <div class="row row-cards">
+
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header"><h3 class="card-title">Add ACL rule</h3></div>
+                            <div class="card-body">
+                                <form method="post" action="/policy/rules/add">
+                                    <input type="hidden" name="csrf" value="{{.CSRF}}">
+                                    <div class="mb-2"><label class="form-label">Sources <small class="text-muted">(comma-separated)</small></label>
+                                        <input type="text" name="src" class="form-control" placeholder="group:admin, tag:laptop, *" required>
+                                    </div>
+                                    <div class="mb-2"><label class="form-label">Destinations <small class="text-muted">(host:port,host:port)</small></label>
+                                        <input type="text" name="dst" class="form-control" placeholder="tag:server:22,80,443" required>
+                                    </div>
+                                    <small class="form-hint">Action defaults to <code>accept</code> (the only action Headscale supports).
+                                    Multiple destinations: comma-separated. Each must include a port spec (use <code>*</code> for any port).</small>
+                                    <button class="btn btn-primary mt-3">Append rule</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header"><h3 class="card-title">Add group</h3></div>
+                            <div class="card-body">
+                                <form method="post" action="/policy/groups/add">
+                                    <input type="hidden" name="csrf" value="{{.CSRF}}">
+                                    <div class="mb-2"><label class="form-label">Group name <small class="text-muted">(must start with <code>group:</code>)</small></label>
+                                        <input type="text" name="name" class="form-control" placeholder="group:admin" required>
+                                    </div>
+                                    <div class="mb-2"><label class="form-label">Members <small class="text-muted">(comma-separated usernames)</small></label>
+                                        <input type="text" name="members" class="form-control" placeholder="alice, bob" required>
+                                    </div>
+                                    <button class="btn btn-primary mt-3">Add group</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header"><h3 class="card-title">Add tag owner</h3></div>
+                            <div class="card-body">
+                                <form method="post" action="/policy/tagowners/add">
+                                    <input type="hidden" name="csrf" value="{{.CSRF}}">
+                                    <div class="mb-2"><label class="form-label">Tag <small class="text-muted">(must start with <code>tag:</code>)</small></label>
+                                        <input type="text" name="tag" class="form-control" placeholder="tag:server" required>
+                                    </div>
+                                    <div class="mb-2"><label class="form-label">Owners <small class="text-muted">(users or groups, comma-separated)</small></label>
+                                        <input type="text" name="owners" class="form-control" placeholder="group:admin" required>
+                                    </div>
+                                    <button class="btn btn-primary mt-3">Add tag owner</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Structured view -->
+            <div class="tab-pane" id="tab-viewer">
+                {{if not .Parsed}}
+                    <div class="alert alert-info">Policy is empty or could not be parsed as JSON. Use the <strong>Raw</strong> tab to inspect.</div>
+                {{else}}
+
+                <div class="row row-cards">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header"><h3 class="card-title">Groups</h3></div>
+                            <ul class="list-group list-group-flush">
+                                {{range $name, $members := .Parsed.Groups}}
+                                <li class="list-group-item">
+                                    <strong><code>{{$name}}</code></strong>
+                                    <div class="text-muted small">{{range $i, $m := $members}}{{if $i}}, {{end}}{{$m}}{{end}}</div>
+                                </li>
+                                {{else}}
+                                <li class="list-group-item text-muted">No groups defined.</li>
+                                {{end}}
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header"><h3 class="card-title">Tag owners</h3></div>
+                            <ul class="list-group list-group-flush">
+                                {{range $tag, $owners := .Parsed.TagOwners}}
+                                <li class="list-group-item">
+                                    <strong><code>{{$tag}}</code></strong>
+                                    <div class="text-muted small">owners: {{range $i, $o := $owners}}{{if $i}}, {{end}}{{$o}}{{end}}</div>
+                                </li>
+                                {{else}}
+                                <li class="list-group-item text-muted">No tag owners defined.</li>
+                                {{end}}
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header"><h3 class="card-title">ACL rules</h3></div>
+                            <div class="table-responsive">
+                                <table class="table table-compact">
+                                    <thead><tr><th>#</th><th>Action</th><th>Sources</th><th>Destinations</th></tr></thead>
+                                    <tbody>
+                                        {{range $i, $r := .Parsed.ACLs}}
+                                        <tr>
+                                            <td>{{$i}}</td>
+                                            <td><code>{{$r.Action}}</code></td>
+                                            <td>{{range $j, $s := $r.Src}}{{if $j}}<br>{{end}}<code>{{$s}}</code>{{end}}</td>
+                                            <td>{{range $j, $d := $r.Dst}}{{if $j}}<br>{{end}}<code>{{$d}}</code>{{end}}</td>
+                                        </tr>
+                                        {{else}}
+                                        <tr><td colspan="4" class="text-muted">No ACL rules.</td></tr>
+                                        {{end}}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{if .Parsed.SSH}}
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header"><h3 class="card-title">SSH rules</h3></div>
+                            <div class="table-responsive">
+                                <table class="table table-compact">
+                                    <thead><tr><th>#</th><th>Action</th><th>Sources</th><th>Destinations</th><th>Users</th></tr></thead>
+                                    <tbody>
+                                        {{range $i, $r := .Parsed.SSH}}
+                                        <tr>
+                                            <td>{{$i}}</td><td><code>{{$r.Action}}</code></td>
+                                            <td>{{range $j, $s := $r.Src}}{{if $j}}<br>{{end}}<code>{{$s}}</code>{{end}}</td>
+                                            <td>{{range $j, $d := $r.Dst}}{{if $j}}<br>{{end}}<code>{{$d}}</code>{{end}}</td>
+                                            <td>{{range $j, $u := $r.Users}}{{if $j}}<br>{{end}}<code>{{$u}}</code>{{end}}</td>
+                                        </tr>
+                                        {{end}}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+
+                {{end}}
+            </div>
+
+            <!-- Raw HuJSON editor -->
+            <div class="tab-pane" id="tab-raw">
+                <form method="post" action="/policy">
+                    <input type="hidden" name="csrf" value="{{.CSRF}}">
+                    <textarea name="policy" rows="30" class="form-control font-monospace" spellcheck="false">{{.RawPolicy}}</textarea>
+                    <small class="form-hint">HuJSON (JSON with comments and trailing commas). Headscale validates on save and rejects invalid policies.</small>
+                    <button class="btn btn-primary mt-3">Save policy</button>
+                </form>
+            </div>
+
+        </div>
+    </div>
+</div>
+{{end}}
+{{end}}

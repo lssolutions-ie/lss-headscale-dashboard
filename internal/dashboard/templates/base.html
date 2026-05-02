@@ -8,7 +8,19 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css">
     <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js" defer></script>
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
-    <style>body { background: #f6f8fb; }</style>
+    <style>
+        body { background: #f6f8fb; }
+        /* Compact tables: shorter rows, tighter padding. */
+        .table-compact > :not(caption) > * > * { padding: 0.4rem 0.6rem; }
+        .table-compact .btn-sm { padding: 0.15rem 0.45rem; font-size: 0.75rem; }
+        .tag-badge { font-family: ui-monospace,SFMono-Regular,Menlo,monospace; font-size: 0.72rem; padding: 0.2rem 0.4rem; border-radius: 4px; margin-right: 0.25rem; display: inline-block; }
+        .tag-forced  { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+        .tag-valid   { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+        .tag-invalid { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        .table-search-row { padding: 0.5rem 0.8rem; background: #fafbfc; border-bottom: 1px solid #e5e7eb; }
+        .table-search-row input { max-width: 320px; }
+        .badge-soft-secondary { background: #e5e7eb; color: #374151; }
+    </style>
 </head>
 <body>
 <div class="page">
@@ -43,6 +55,7 @@
                     <li class="nav-item {{if eq .Active "users"}}active{{end}}"><a class="nav-link" href="/users">Users</a></li>
                     <li class="nav-item {{if eq .Active "nodes"}}active{{end}}"><a class="nav-link" href="/nodes">Nodes</a></li>
                     <li class="nav-item {{if eq .Active "preauthkeys"}}active{{end}}"><a class="nav-link" href="/preauthkeys">Pre-auth keys</a></li>
+                    <li class="nav-item {{if eq .Active "policy"}}active{{end}}"><a class="nav-link" href="/policy">ACLs</a></li>
                     <li class="nav-item {{if eq .Active "audit"}}active{{end}}"><a class="nav-link" href="/audit">Audit log</a></li>
                     <li class="nav-item {{if eq .Active "settings"}}active{{end}}"><a class="nav-link" href="/settings">Settings</a></li>
                 </ul>
@@ -59,6 +72,37 @@
         </div>
     </div>
 </div>
+<script>
+// Universal table search: any [data-search="<sel>"] input filters rows
+// of the table at <sel> by checking concatenated cell text.
+document.addEventListener('input', (e) => {
+    const sel = e.target.dataset.search;
+    if (!sel) return;
+    const table = document.querySelector(sel);
+    if (!table) return;
+    const q = e.target.value.trim().toLowerCase();
+    table.querySelectorAll('tbody tr').forEach(tr => {
+        const text = tr.innerText.toLowerCase();
+        tr.style.display = (q === '' || text.includes(q)) ? '' : 'none';
+    });
+});
+// Universal table filter: any [data-filter="<sel>"][data-col="<n>"] select
+// filters rows at <sel> by exact-match value in column n (0-indexed).
+document.addEventListener('change', (e) => {
+    const sel = e.target.dataset.filter;
+    if (!sel) return;
+    const col = parseInt(e.target.dataset.col, 10);
+    const want = e.target.value;
+    const table = document.querySelector(sel);
+    if (!table) return;
+    table.querySelectorAll('tbody tr').forEach(tr => {
+        if (want === '') { tr.style.display = ''; return; }
+        const cell = tr.children[col];
+        const v = cell ? cell.innerText.trim() : '';
+        tr.style.display = v.toLowerCase().includes(want.toLowerCase()) ? '' : 'none';
+    });
+});
+</script>
 </body>
 </html>
 {{end}}

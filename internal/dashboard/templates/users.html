@@ -1,7 +1,7 @@
 {{define "title"}}Users{{end}}
 {{define "content"}}
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="page-title">Users</h2>
+    <h2 class="page-title m-0">Users <span class="text-muted ms-2 fs-5">{{len .Users}}</span></h2>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newUser">New user</button>
 </div>
 
@@ -9,17 +9,20 @@
 <div class="alert alert-warning"><strong>Headscale connection:</strong> {{.HeadscaleError}} <a href="/settings#headscale" class="alert-link">Configure</a></div>
 {{else}}
 <div class="card">
+    <div class="table-search-row">
+        <input type="search" class="form-control form-control-sm" placeholder="Search across all columns…" data-search="#users-table">
+    </div>
     <div class="table-responsive">
-        <table class="table table-vcenter">
+        <table id="users-table" class="table table-compact">
             <thead><tr><th>Name</th><th>Email</th><th>Created</th><th class="w-1"></th></tr></thead>
             <tbody>
             {{range .Users}}
                 <tr>
-                    <td>{{.Name}}</td>
+                    <td><strong>{{.Name}}</strong></td>
                     <td>{{.Email}}</td>
-                    <td><span class="text-muted">{{.CreatedAt}}</span></td>
+                    <td><span class="text-muted small">{{.CreatedAt}}</span></td>
                     <td>
-                        <form method="post" action="/users/delete" class="d-inline" onsubmit="return confirm('Delete user {{.Name}}?');">
+                        <form method="post" action="/users/delete" class="m-0" onsubmit="return confirm('Delete user {{.Name}}?');">
                             <input type="hidden" name="csrf" value="{{$.CSRF}}">
                             <input type="hidden" name="name" value="{{.Name}}">
                             <button class="btn btn-sm btn-outline-danger">Delete</button>

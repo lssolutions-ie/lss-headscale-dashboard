@@ -2,13 +2,16 @@
 {{define "content"}}
 <h2 class="page-title mb-3">Audit log</h2>
 <div class="card">
+    <div class="table-search-row">
+        <input type="search" class="form-control form-control-sm" placeholder="Search across all columns…" data-search="#audit-table">
+    </div>
     <div class="table-responsive">
-        <table class="table table-vcenter">
+        <table id="audit-table" class="table table-compact">
             <thead><tr><th>When</th><th>Action</th><th>Target</th><th>Actor</th><th>IP</th><th>Details</th></tr></thead>
             <tbody>
             {{range .Entries}}
                 <tr>
-                    <td><span class="text-muted">{{.Timestamp.Format "2006-01-02 15:04:05"}}</span></td>
+                    <td><span class="text-muted small">{{.Timestamp.Format "2006-01-02 15:04:05"}}</span></td>
                     <td><code>{{.Action}}</code></td>
                     <td>{{.Target}}</td>
                     <td>{{if .ActorUserID}}#{{.ActorUserID}}{{else}}—{{end}}</td>

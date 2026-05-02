@@ -1,43 +1,87 @@
 {{define "title"}}Nodes{{end}}
 {{define "content"}}
-<h2 class="page-title mb-3">Nodes</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="page-title m-0">Nodes <span class="text-muted ms-2 fs-5">{{len .Nodes}}</span></h2>
+</div>
 
 {{if .HeadscaleError}}
 <div class="alert alert-warning"><strong>Headscale connection:</strong> {{.HeadscaleError}} <a href="/settings#headscale" class="alert-link">Configure</a></div>
 {{else}}
 <div class="card">
+    <div class="table-search-row d-flex gap-2 align-items-center">
+        <input type="search" class="form-control form-control-sm" placeholder="Search across all columns…" data-search="#nodes-table">
+        <select class="form-select form-select-sm" style="max-width:140px" data-filter="#nodes-table" data-col="4">
+            <option value="">All statuses</option>
+            <option value="online">online</option>
+            <option value="offline">offline</option>
+        </select>
+        <select class="form-select form-select-sm" style="max-width:160px" data-filter="#nodes-table" data-col="1">
+            <option value="">All users</option>
+            {{range .UsersList}}<option value="{{.}}">{{.}}</option>{{end}}
+        </select>
+    </div>
     <div class="table-responsive">
-        <table class="table table-vcenter">
-            <thead><tr><th>Name</th><th>User</th><th>IPs</th><th>Status</th><th>Last seen</th><th class="w-1"></th></tr></thead>
+        <table id="nodes-table" class="table table-compact">
+            <thead><tr><th>Name</th><th>User</th><th>IPs</th><th>Tags</th><th>Status</th><th>Last seen</th><th class="w-1"></th></tr></thead>
             <tbody>
             {{range .Nodes}}
                 <tr>
-                    <td><strong>{{.GivenName}}</strong>{{if ne .Name .GivenName}}<div class="text-muted small">{{.Name}}</div>{{end}}</td>
+                    <td><strong>{{.GivenName}}</strong>{{if ne .Name .GivenName}}<small class="text-muted ms-1">({{.Name}})</small>{{end}}</td>
                     <td>{{.User.Name}}</td>
                     <td><code>{{range $i, $ip := .IPAddrs}}{{if $i}}, {{end}}{{$ip}}{{end}}</code></td>
-                    <td>{{if .Online}}<span class="badge bg-success">online</span>{{else}}<span class="badge bg-secondary">offline</span>{{end}}</td>
-                    <td><span class="text-muted">{{.LastSeen}}</span></td>
                     <td>
-                        <div class="btn-list">
-                            <form method="post" action="/nodes/expire" class="d-inline" onsubmit="return confirm('Expire node {{.GivenName}}?');">
-                                <input type="hidden" name="csrf" value="{{$.CSRF}}">
-                                <input type="hidden" name="id" value="{{.ID}}">
-                                <button class="btn btn-sm btn-outline-warning">Expire</button>
-                            </form>
-                            <form method="post" action="/nodes/delete" class="d-inline" onsubmit="return confirm('Delete node {{.GivenName}}?');">
-                                <input type="hidden" name="csrf" value="{{$.CSRF}}">
-                                <input type="hidden" name="id" value="{{.ID}}">
-                                <button class="btn btn-sm btn-outline-danger">Delete</button>
-                            </form>
+                        {{range .ForcedTags}}<span class="tag-badge tag-forced" title="forced">{{.}}</span>{{end}}
+                        {{range .ValidTags}}<span class="tag-badge tag-valid" title="advertised, valid">{{.}}</span>{{end}}
+                        {{range .InvalidTags}}<span class="tag-badge tag-invalid" title="advertised, not allowed by ACL">{{.}}</span>{{end}}
+                    </td>
+                    <td>{{if .Online}}<span class="badge bg-success">online</span>{{else}}<span class="badge badge-soft-secondary">offline</span>{{end}}</td>
+                    <td><span class="text-muted small">{{.LastSeen}}</span></td>
+                    <td>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">Actions</button>
+                            <div class="dropdown-menu dropdown-menu-end">
+                                <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#tags-{{.ID}}">Manage tags</button>
+                                <form method="post" action="/nodes/expire" class="m-0" onsubmit="return confirm('Expire {{.GivenName}}?');">
+                                    <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}">
+                                    <button class="dropdown-item">Expire</button>
+                                </form>
+                                <div class="dropdown-divider"></div>
+                                <form method="post" action="/nodes/delete" class="m-0" onsubmit="return confirm('Delete {{.GivenName}}? This is permanent.');">
+                                    <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}">
+                                    <button class="dropdown-item text-danger">Delete</button>
+                                </form>
+                            </div>
                         </div>
                     </td>
                 </tr>
             {{else}}
-                <tr><td colspan="6" class="text-muted">No nodes registered.</td></tr>
+                <tr><td colspan="7" class="text-muted">No nodes registered.</td></tr>
             {{end}}
             </tbody>
         </table>
     </div>
 </div>
+
+{{range .Nodes}}
+<div class="modal" id="tags-{{.ID}}" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="post" action="/nodes/tags">
+            <input type="hidden" name="csrf" value="{{$.CSRF}}">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <div class="modal-header"><h5 class="modal-title">Tags for {{.GivenName}}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Forced tags <small class="text-muted">(admin-applied, must match ACL <code>tagOwners</code>)</small></label>
+                    <input type="text" name="tags" class="form-control" placeholder="tag:server, tag:db" value="{{range $i, $t := .ForcedTags}}{{if $i}}, {{end}}{{$t}}{{end}}">
+                    <small class="form-hint">Comma-separated. Each must start with <code>tag:</code>. Empty to clear.</small>
+                </div>
+                {{if .ValidTags}}<div class="mb-2"><strong>Currently advertised (valid):</strong> {{range $i, $t := .ValidTags}}{{if $i}}, {{end}}<code>{{$t}}</code>{{end}}</div>{{end}}
+                {{if .InvalidTags}}<div class="mb-2 text-danger"><strong>Advertised but rejected by ACL:</strong> {{range $i, $t := .InvalidTags}}{{if $i}}, {{end}}<code>{{$t}}</code>{{end}}</div>{{end}}
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Save tags</button></div>
+        </form>
+    </div>
+</div>
+{{end}}
 {{end}}
 {{end}}

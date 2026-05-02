@@ -71,10 +71,12 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /nodes", h.nodes)
 	mux.HandleFunc("POST /nodes/expire", h.nodesExpire)
 	mux.HandleFunc("POST /nodes/delete", h.nodesDelete)
+	mux.HandleFunc("POST /nodes/tags", h.nodesTags)
 	mux.HandleFunc("GET /preauthkeys", h.preAuthKeys)
 	mux.HandleFunc("POST /preauthkeys/create", h.preAuthKeysCreate)
 	mux.HandleFunc("POST /preauthkeys/expire", h.preAuthKeysExpire)
 	mux.HandleFunc("GET /audit", h.auditPage)
+	h.RegisterPolicyRoutes(mux)
 	mux.HandleFunc("GET /settings", h.settings)
 	mux.HandleFunc("POST /settings/headscale", h.settingsSaveHeadscale)
 	mux.HandleFunc("POST /settings/headscale/test", h.settingsTestHeadscale)
@@ -310,7 +312,8 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 	bp := h.loadBase(w, r, "nodes")
 	type pageData struct {
 		basePage
-		Nodes []headscale.Node
+		Nodes     []headscale.Node
+		UsersList []string
 	}
 	pd := pageData{basePage: bp}
 	c, errStr := h.headscaleClient(r.Context())
@@ -324,9 +327,53 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 			pd.HeadscaleError = err.Error()
 		} else {
 			pd.Nodes = ns
+			pd.UsersList = uniqueUsersFromNodes(ns)
 		}
 	}
 	h.render(w, "nodes.html", pd)
+}
+
+func (h *Handler) nodesTags(w http.ResponseWriter, r *http.Request) {
+	if !h.checkCSRF(r) {
+		http.Error(w, "csrf", http.StatusForbidden)
+		return
+	}
+	c, errStr := h.headscaleClient(r.Context())
+	if c == nil {
+		setFlash(w, "danger", errStr)
+		http.Redirect(w, r, "/nodes", http.StatusSeeOther)
+		return
+	}
+	id := r.FormValue("id")
+	tags := splitCSV(r.FormValue("tags"))
+	for _, t := range tags {
+		if !strings.HasPrefix(t, "tag:") {
+			setFlash(w, "danger", "Each tag must start with 'tag:'. Got: "+t)
+			http.Redirect(w, r, "/nodes", http.StatusSeeOther)
+			return
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	defer cancel()
+	if err := c.SetNodeTags(ctx, id, tags); err != nil {
+		setFlash(w, "danger", "Set tags failed: "+err.Error())
+	} else {
+		audit.Write(h.db, actorID(r), currentIP(r), audit.ActionSettingsUpdate, "node.tags."+id, map[string]any{"tags": tags})
+		setFlash(w, "success", "Tags updated.")
+	}
+	http.Redirect(w, r, "/nodes", http.StatusSeeOther)
+}
+
+func uniqueUsersFromNodes(nodes []headscale.Node) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range nodes {
+		if n.User.Name != "" && !seen[n.User.Name] {
+			seen[n.User.Name] = true
+			out = append(out, n.User.Name)
+		}
+	}
+	return out
 }
 
 func (h *Handler) nodesExpire(w http.ResponseWriter, r *http.Request) {
@@ -379,9 +426,10 @@ func (h *Handler) preAuthKeys(w http.ResponseWriter, r *http.Request) {
 	bp := h.loadBase(w, r, "preauthkeys")
 	type pageData struct {
 		basePage
-		Keys   []headscale.PreAuthKey
-		Users  []headscale.User
-		NewKey string
+		Keys      []headscale.PreAuthKey
+		Users     []headscale.User
+		UsersList []string
+		NewKey    string
 	}
 	pd := pageData{basePage: bp}
 	if v := r.URL.Query().Get("new"); v != "" {
@@ -395,6 +443,9 @@ func (h *Handler) preAuthKeys(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		pd.Keys, _ = c.ListPreAuthKeys(ctx, "")
 		pd.Users, _ = c.ListUsers(ctx)
+		for _, u := range pd.Users {
+			pd.UsersList = append(pd.UsersList, u.Name)
+		}
 	}
 	h.render(w, "preauthkeys.html", pd)
 }
@@ -414,9 +465,10 @@ func (h *Handler) preAuthKeysCreate(w http.ResponseWriter, r *http.Request) {
 	reusable := r.FormValue("reusable") == "on"
 	ephemeral := r.FormValue("ephemeral") == "on"
 	exp := strings.TrimSpace(r.FormValue("expiration"))
+	tags := splitCSV(r.FormValue("acl_tags"))
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()
-	k, err := c.CreatePreAuthKey(ctx, user, reusable, ephemeral, nil, exp)
+	k, err := c.CreatePreAuthKey(ctx, user, reusable, ephemeral, tags, exp)
 	if err != nil {
 		setFlash(w, "danger", "Create failed: "+err.Error())
 		http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
