@@ -71,7 +71,7 @@
             <input type="hidden" name="csrf" value="{{$.CSRF}}">
             <input type="hidden" name="id" value="{{.ID}}">
 
-            <div class="modal-header">
+            <div class="modal-header py-3">
                 <div>
                     <h5 class="modal-title m-0">Edit node #{{.ID}}{{if .GivenName}} — {{.GivenName}}{{end}}</h5>
                     {{if .Name}}<small class="text-muted">hostname: <code>{{.Name}}</code></small>{{end}}
