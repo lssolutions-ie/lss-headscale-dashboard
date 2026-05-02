@@ -20,6 +20,10 @@
         .table-search-row { padding: 0.5rem 0.8rem; background: #fafbfc; border-bottom: 1px solid #e5e7eb; }
         .table-search-row input { max-width: 320px; }
         .badge-soft-secondary { background: #e5e7eb; color: #374151; }
+        /* Let row-action dropdowns extend past the card / table-responsive clip
+           when the table has been narrowed by search. */
+        .card.allow-overflow,
+        .card.allow-overflow > .table-responsive { overflow: visible; }
     </style>
 </head>
 <body>
