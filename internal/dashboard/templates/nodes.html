@@ -24,7 +24,13 @@
                             <input type="text" name="hostname" class="form-control" placeholder="my-host">
                         </div>
                         <div class="col-12"><label class="form-label">ACL tags <small class="text-muted">(comma-separated, must match <code>tagOwners</code>)</small></label>
-                            <input type="text" name="tags" class="form-control" placeholder="tag:server, tag:db">
+                            <input type="text" name="tags" class="form-control" id="reg-tags-input" placeholder="tag:server, tag:db">
+                            {{if .KnownTags}}
+                            <div class="mt-2 d-flex flex-wrap gap-1" id="reg-tag-chips">
+                                <small class="text-muted me-2 align-self-center">From ACL:</small>
+                                {{range .KnownTags}}<button type="button" class="btn btn-sm btn-outline-primary tag-chip" data-tag="{{.}}">{{.}}</button>{{end}}
+                            </div>
+                            {{end}}
                         </div>
                         <div class="col-md-4 form-check ms-3"><input type="checkbox" name="reusable" id="reg-reusable" class="form-check-input"><label class="form-check-label" for="reg-reusable">Reusable</label></div>
                         <div class="col-md-4 form-check"><input type="checkbox" name="ephemeral" id="reg-ephemeral" class="form-check-input"><label class="form-check-label" for="reg-ephemeral">Ephemeral</label></div>
@@ -89,6 +95,28 @@
         copyBtn.textContent = 'Copied ✓';
         setTimeout(() => copyBtn.textContent = 'Copy command', 1500);
     });
+
+    // ACL-tag chip toggles: click to add/remove from the comma-separated input.
+    const tagInput = document.getElementById('reg-tags-input');
+    const refreshChipState = () => {
+        const have = (tagInput.value || '').split(',').map(s => s.trim()).filter(Boolean);
+        document.querySelectorAll('.tag-chip').forEach(b => {
+            const on = have.includes(b.dataset.tag);
+            b.classList.toggle('btn-primary', on);
+            b.classList.toggle('btn-outline-primary', !on);
+        });
+    };
+    document.querySelectorAll('.tag-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tag = btn.dataset.tag;
+            let tags = (tagInput.value || '').split(',').map(s => s.trim()).filter(Boolean);
+            const i = tags.indexOf(tag);
+            if (i >= 0) tags.splice(i, 1); else tags.push(tag);
+            tagInput.value = tags.join(', ');
+            refreshChipState();
+        });
+    });
+    tagInput?.addEventListener('input', refreshChipState);
 })();
 </script>
 

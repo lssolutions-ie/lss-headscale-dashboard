@@ -12,6 +12,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -337,6 +338,7 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 		DBNodes    map[string]headscaledb.FullNode
 		DBColumns  []string
 		ClientURL  string
+		KnownTags  []string
 	}
 	pd := pageData{basePage: bp}
 	hdb, _ := settings.GetHeadscaleDB(h.db)
@@ -364,6 +366,15 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 		} else {
 			pd.Nodes = ns
 			pd.UsersList = uniqueUsersFromNodes(ns)
+		}
+		// Tags defined as keys of tagOwners in the ACL policy.
+		if pol, err := c.GetPolicy(ctx); err == nil {
+			if parsed := parsePolicy(pol.Policy); parsed != nil {
+				for tag := range parsed.TagOwners {
+					pd.KnownTags = append(pd.KnownTags, tag)
+				}
+				sort.Strings(pd.KnownTags)
+			}
 		}
 	}
 	h.render(w, "nodes.html", pd)
