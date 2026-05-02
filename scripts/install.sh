@@ -158,14 +158,15 @@ open_firewall() {
     fi
 }
 
-# If Headscale is on this host, allow the dashboard service user to:
-#   - read/write Headscale's SQLite DB (group access via the headscale group;
-#     ensure_user already added the user to that group when present)
-#   - restart Headscale via sudo (NoNewPrivileges is intentionally off in the unit)
+# If Headscale is on this host, configure everything the dashboard needs to
+# edit it: sudoers for `systemctl restart`, plus ACLs on Headscale's data dir
+# so the dashboard can read/write db.sqlite + WAL files. ACLs are used so the
+# perms survive Headscale recreating WAL files on restart.
 configure_headscale_colocation() {
     if ! systemctl list-unit-files headscale.service >/dev/null 2>&1; then
         return
     fi
+
     if [ -d /etc/sudoers.d ]; then
         SUDOERS=/etc/sudoers.d/lss-headscale-dashboard
         cat >"$SUDOERS" <<EOF
@@ -174,6 +175,33 @@ $SVC_USER ALL=(root) NOPASSWD: /bin/systemctl restart headscale.service, /usr/bi
 EOF
         chmod 0440 "$SUDOERS"
         echo "  · headscale.service detected — sudoers drop-in installed"
+    fi
+
+    HEADSCALE_DIR=/var/lib/headscale
+    if [ ! -d "$HEADSCALE_DIR" ]; then
+        return
+    fi
+
+    if ! command -v setfacl >/dev/null 2>&1; then
+        echo "  · installing acl package for setfacl"
+        apt-get install -y -qq acl >/dev/null 2>&1 || true
+    fi
+
+    if command -v setfacl >/dev/null 2>&1; then
+        # Allow the dashboard user into the directory and grant rw on the SQLite
+        # files; default ACL ensures permissions survive WAL recreation by Headscale.
+        setfacl    -m "u:$SVC_USER:rwx" "$HEADSCALE_DIR" 2>/dev/null || true
+        setfacl -d -m "u:$SVC_USER:rw"  "$HEADSCALE_DIR" 2>/dev/null || true
+        for f in "$HEADSCALE_DIR"/db.sqlite "$HEADSCALE_DIR"/db.sqlite-wal "$HEADSCALE_DIR"/db.sqlite-shm; do
+            [ -f "$f" ] && setfacl -m "u:$SVC_USER:rw" "$f" 2>/dev/null || true
+        done
+        echo "  · ACLs set on $HEADSCALE_DIR"
+    else
+        # Fallback: group-based perms. Less robust — Headscale may recreate WAL
+        # files with mode 0600 on restart and you'll need to redo this.
+        chmod g+rx "$HEADSCALE_DIR" 2>/dev/null || true
+        chmod g+rw "$HEADSCALE_DIR"/db.sqlite* 2>/dev/null || true
+        echo "  · chmod-fallback applied to $HEADSCALE_DIR (acl package missing)"
     fi
 }
 
