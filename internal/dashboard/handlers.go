@@ -92,7 +92,6 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /preauthkeys", h.preAuthKeys)
 	mux.HandleFunc("POST /preauthkeys/create", h.preAuthKeysCreate)
 	mux.HandleFunc("POST /preauthkeys/expire", h.preAuthKeysExpire)
-	mux.HandleFunc("POST /preauthkeys/expire-bulk", h.preAuthKeysExpireBulk)
 	mux.HandleFunc("GET /audit", h.auditPage)
 	h.RegisterTagRoutes(mux)
 	h.RegisterPolicyRoutes(mux)
@@ -933,82 +932,6 @@ func (h *Handler) preAuthKeys(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.render(w, "preauthkeys.html", pd)
-}
-
-// preAuthKeysExpireBulk expires every selected key that's still active.
-// Uses the API only — no DB write, no Headscale restart needed.
-func (h *Handler) preAuthKeysExpireBulk(w http.ResponseWriter, r *http.Request) {
-	if !h.checkCSRF(r) {
-		http.Error(w, "csrf", http.StatusForbidden)
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
-		return
-	}
-	ids := r.PostForm["ids"]
-	if len(ids) == 0 {
-		setFlash(w, "warning", "No keys selected.")
-		http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
-		return
-	}
-	c, errStr := h.headscaleClient(r.Context())
-	if c == nil {
-		setFlash(w, "danger", errStr)
-		http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-
-	all, err := c.ListPreAuthKeys(ctx, "")
-	if err != nil {
-		setFlash(w, "danger", "List failed: "+err.Error())
-		http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
-		return
-	}
-	byID := map[string]headscale.PreAuthKey{}
-	for _, k := range all {
-		byID[k.ID] = k
-	}
-
-	var expired, skipped int
-	var failures []string
-	for _, idStr := range ids {
-		k, ok := byID[idStr]
-		if !ok {
-			failures = append(failures, "id="+idStr+": not found")
-			continue
-		}
-		if k.Used || k.IsExpired() {
-			skipped++
-			continue
-		}
-		if err := c.ExpirePreAuthKey(ctx, k.User.Name, k.Key); err != nil {
-			failures = append(failures, fmt.Sprintf("id=%s: %v", idStr, err))
-			continue
-		}
-		expired++
-	}
-
-	audit.Write(h.db, actorID(r), currentIP(r), audit.ActionPreAuthKeyExpire, fmt.Sprintf("%d", expired), map[string]any{"op": "expire-bulk", "ids": ids, "skipped": skipped, "failures": failures})
-
-	parts := []string{fmt.Sprintf("Expired %d key(s)", expired)}
-	if skipped > 0 {
-		parts = append(parts, fmt.Sprintf("%d already used or expired", skipped))
-	}
-	if len(failures) > 0 {
-		parts = append(parts, fmt.Sprintf("%d failed: %s", len(failures), strings.Join(failures, "; ")))
-	}
-	kind := "success"
-	if expired == 0 && skipped == 0 {
-		kind = "warning"
-	}
-	if len(failures) > 0 && expired == 0 {
-		kind = "danger"
-	}
-	setFlash(w, kind, strings.Join(parts, "; "))
-	http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
 }
 
 func (h *Handler) preAuthKeysCreate(w http.ResponseWriter, r *http.Request) {
