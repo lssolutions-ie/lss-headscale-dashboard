@@ -364,7 +364,7 @@
                         {{range .ValidTags}}<span class="tag-badge tag-valid" title="advertised, valid">{{.}}</span>{{end}}
                         {{range .InvalidTags}}<span class="tag-badge tag-invalid" title="advertised, not allowed by ACL">{{.}}</span>{{end}}
                     </td>
-                    <td>{{if .Online}}<span class="badge bg-success">online</span>{{else}}<span class="badge badge-soft-secondary">offline</span>{{end}}</td>
+                    <td>{{if .Online}}<span class="badge bg-success">online</span>{{else}}<span class="badge bg-danger">offline</span>{{end}}</td>
                     <td><span class="text-muted small">{{.LastSeen}}</span></td>
                     <td>
                         <div class="dropdown">
