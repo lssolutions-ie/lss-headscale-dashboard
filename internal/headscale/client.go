@@ -46,18 +46,18 @@ type User struct {
 }
 
 type Node struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	GivenName   string   `json:"givenName"`
-	User        User     `json:"user"`
-	IPAddrs     []string `json:"ipAddresses"`
-	LastSeen    string   `json:"lastSeen"`
-	Online      bool     `json:"online"`
-	Expiry      string   `json:"expiry,omitempty"`
-	RegisterMe  string   `json:"registerMethod,omitempty"`
-	ForcedTags  []string `json:"forcedTags,omitempty"`
-	ValidTags   []string `json:"validTags,omitempty"`
-	InvalidTags []string `json:"invalidTags,omitempty"`
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	GivenName  string   `json:"givenName"`
+	User       User     `json:"user"`
+	IPAddrs    []string `json:"ipAddresses"`
+	LastSeen   string   `json:"lastSeen"`
+	Online     bool     `json:"online"`
+	Expiry     string   `json:"expiry,omitempty"`
+	RegisterMe string   `json:"registerMethod,omitempty"`
+	// Tags is the merged list of tags Headscale considers active on this node
+	// (forced + advertised+valid). The 0.28 API exposes only this combined field.
+	Tags []string `json:"tags,omitempty"`
 }
 
 type PreAuthKey struct {

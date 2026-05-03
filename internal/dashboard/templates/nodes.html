@@ -360,9 +360,7 @@
                     <td>{{.User.Name}}</td>
                     <td><code>{{range $i, $ip := .IPAddrs}}{{if $i}}, {{end}}{{$ip}}{{end}}</code></td>
                     <td>
-                        {{range .ForcedTags}}<span class="tag-badge tag-forced" title="forced">{{.}}</span>{{end}}
-                        {{range .ValidTags}}<span class="tag-badge tag-valid" title="advertised, valid">{{.}}</span>{{end}}
-                        {{range .InvalidTags}}<span class="tag-badge tag-invalid" title="advertised, not allowed by ACL">{{.}}</span>{{end}}
+                        {{range .Tags}}<span class="tag-badge tag-forced">{{.}}</span>{{end}}
                     </td>
                     <td>{{if .Online}}<span class="badge bg-success text-white">online</span>{{else}}<span class="badge bg-danger text-white">offline</span>{{end}}</td>
                     <td><span class="text-muted small">{{.LastSeen}}</span></td>
