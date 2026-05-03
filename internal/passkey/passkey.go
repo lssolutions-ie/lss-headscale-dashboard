@@ -56,16 +56,30 @@ func newToken() string {
 
 const loginCookie = "lss_pk_login"
 
-// rpFromRequest returns the WebAuthn config derived from the request's
-// host (so the same binary works regardless of hostname).
+// rpFromRequest returns the WebAuthn config derived from the request's host.
+//
+// Scheme detection:
+//   - If X-Forwarded-Proto is set, trust it (HAProxy / nginx setups).
+//   - Else if the request arrived directly over TLS, use https.
+//   - Else if the host is a loopback (localhost / 127.0.0.1 / ::1), use http
+//     (matches SSH-tunnel access at http://localhost:9000).
+//   - Else default to https. Reverse proxies that don't set X-Forwarded-Proto
+//     are common; a real hostname effectively always means TLS in front in
+//     production. The previous heuristic defaulted to http and broke
+//     mgmt.example.com setups whose proxy didn't pass the header.
 func rpFromRequest(r *http.Request) (*webauthn.WebAuthn, error) {
 	host := r.Header.Get("X-Forwarded-Host")
 	if host == "" {
 		host = r.Host
 	}
 	rpID := strings.SplitN(host, ":", 2)[0]
+
 	scheme := "https"
-	if r.Header.Get("X-Forwarded-Proto") == "http" || (r.TLS == nil && r.Header.Get("X-Forwarded-Proto") == "") {
+	if xfp := r.Header.Get("X-Forwarded-Proto"); xfp != "" {
+		scheme = xfp
+	} else if r.TLS != nil {
+		scheme = "https"
+	} else if isLoopback(rpID) {
 		scheme = "http"
 	}
 	origin := scheme + "://" + host
@@ -74,6 +88,10 @@ func rpFromRequest(r *http.Request) (*webauthn.WebAuthn, error) {
 		RPDisplayName: "LSS Headscale Dashboard",
 		RPOrigins:     []string{origin},
 	})
+}
+
+func isLoopback(host string) bool {
+	return host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasPrefix(host, "127.")
 }
 
 // userAdapter implements webauthn.User against our DB row.
