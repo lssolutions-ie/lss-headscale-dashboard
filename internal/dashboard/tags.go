@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/audit"
-	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/headscale"
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/headscaledb"
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/settings"
 )
@@ -265,5 +264,3 @@ type errString string
 func (e errString) Error() string { return string(e) }
 func errf(s string) error         { return errString(s) }
 
-// keep these imports referenced even if a future refactor removes a usage
-var _ = headscale.Node{}

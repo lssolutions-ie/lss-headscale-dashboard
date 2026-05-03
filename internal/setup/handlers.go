@@ -2,7 +2,6 @@ package setup
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"embed"
 	"encoding/base64"
@@ -10,7 +9,6 @@ import (
 	"errors"
 	"html/template"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -27,7 +25,6 @@ var templateFS embed.FS
 
 const (
 	cookieSetup = "lss_setup"
-	cookieCSRF  = "lss_csrf"
 	settingDone = "setup_complete"
 
 	recoveryCodeCount = 10
@@ -59,31 +56,32 @@ func IsComplete(d *sql.DB) (bool, error) {
 }
 
 func (h *Handler) Routes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /setup", h.adminForm)
-	mux.HandleFunc("POST /setup", h.createAdmin)
-	mux.HandleFunc("POST /setup/totp", h.verifyTOTP)
-	mux.HandleFunc("GET /setup/done", h.done)
-	mux.HandleFunc("POST /setup/test-headscale", h.testHeadscale)
+	mux.HandleFunc("GET /setup", h.guardSetup(h.adminForm))
+	mux.HandleFunc("POST /setup", h.guardSetup(h.createAdmin))
+	mux.HandleFunc("POST /setup/totp", h.guardSetup(h.verifyTOTP))
+	mux.HandleFunc("GET /setup/done", h.guardSetup(h.done))
+	mux.HandleFunc("POST /setup/test-headscale", h.guardSetup(h.testHeadscale))
+}
+
+// guardSetup wraps a wizard handler so it only runs while setup_complete=false.
+// Once setup is done, the wizard is closed for business and we redirect to /login.
+func (h *Handler) guardSetup(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		complete, err := IsComplete(h.db)
+		if err != nil {
+			h.log.Error("read setup state", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if complete {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		next(w, r)
+	}
 }
 
 // ------- helpers -------
-
-func (h *Handler) render(w http.ResponseWriter, name string, data any) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.tmpl.ExecuteTemplate(w, name, data); err != nil {
-		h.log.Error("render template", "name", name, "err", err)
-	}
-}
-
-func (h *Handler) renderPage(w http.ResponseWriter, body string, data any) {
-	if err := h.tmpl.ExecuteTemplate(w, body, data); err != nil {
-		// Compose with base by executing both templates in order — actually we want
-		// to render via the "base" template which references "content"/"title" defined
-		// in the body template. html/template treats all parsed files as one template
-		// set, so we just execute "base" and the right blocks resolve from `body`.
-		h.log.Error("render", "body", body, "err", err)
-	}
-}
 
 // renderWith renders the layout. The body template (admin.html, totp.html, done.html)
 // must define `content` and `title` blocks; "base" template references them.
@@ -105,39 +103,15 @@ func (h *Handler) renderWith(w http.ResponseWriter, body string, data any) {
 	}
 }
 
+// CSRF + clientIP live in the auth package now (consolidated). These wrappers
+// stay so the rest of the file reads naturally.
 func (h *Handler) ensureCSRF(w http.ResponseWriter, r *http.Request) string {
-	if c, err := r.Cookie(cookieCSRF); err == nil && len(c.Value) >= 24 {
-		return c.Value
-	}
-	b := make([]byte, 24)
-	_, _ = rand.Read(b)
-	tok := base64.RawURLEncoding.EncodeToString(b)
-	http.SetCookie(w, &http.Cookie{
-		Name:     cookieCSRF,
-		Value:    tok,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   3600,
-	})
-	return tok
+	return auth.EnsureCSRFToken(w, r)
 }
 
-func (h *Handler) checkCSRF(r *http.Request) bool {
-	c, err := r.Cookie(cookieCSRF)
-	if err != nil {
-		return false
-	}
-	return r.FormValue("csrf") != "" && r.FormValue("csrf") == c.Value
-}
+func (h *Handler) checkCSRF(r *http.Request) bool { return auth.CheckCSRFToken(r) }
 
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}
+func clientIP(r *http.Request) string { return auth.ClientIP(r) }
 
 // ------- handlers -------
 

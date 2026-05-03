@@ -69,7 +69,7 @@
                         <a href="/settings" class="dropdown-item">Settings</a>
                         <a href="/audit" class="dropdown-item">Audit log</a>
                         <div class="dropdown-divider"></div>
-                        <form method="post" action="/logout" class="m-0"><button class="dropdown-item">Sign out</button></form>
+                        <form method="post" action="/logout" class="m-0"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="dropdown-item">Sign out</button></form>
                     </div>
                 </div>
             </div>

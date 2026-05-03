@@ -2,12 +2,10 @@ package dashboard
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"embed"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -129,26 +127,10 @@ func (h *Handler) loadBase(w http.ResponseWriter, r *http.Request, active string
 }
 
 func (h *Handler) ensureCSRF(w http.ResponseWriter, r *http.Request) string {
-	if c, err := r.Cookie("lss_csrf"); err == nil && len(c.Value) >= 24 {
-		return c.Value
-	}
-	b := make([]byte, 24)
-	_, _ = rand.Read(b)
-	tok := base64.RawURLEncoding.EncodeToString(b)
-	http.SetCookie(w, &http.Cookie{
-		Name: "lss_csrf", Value: tok, Path: "/", HttpOnly: true,
-		SameSite: http.SameSiteLaxMode, MaxAge: 3600,
-	})
-	return tok
+	return auth.EnsureCSRFToken(w, r)
 }
 
-func (h *Handler) checkCSRF(r *http.Request) bool {
-	c, err := r.Cookie("lss_csrf")
-	if err != nil {
-		return false
-	}
-	return r.FormValue("csrf") != "" && r.FormValue("csrf") == c.Value
-}
+func (h *Handler) checkCSRF(r *http.Request) bool { return auth.CheckCSRFToken(r) }
 
 func (h *Handler) render(w http.ResponseWriter, body string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -208,15 +190,7 @@ func (h *Handler) headscaleClient(ctx context.Context) (*headscale.Client, strin
 	return c, ""
 }
 
-func currentIP(r *http.Request) string {
-	if x := r.Header.Get("X-Forwarded-For"); x != "" {
-		if i := strings.Index(x, ","); i >= 0 {
-			return strings.TrimSpace(x[:i])
-		}
-		return x
-	}
-	return r.RemoteAddr
-}
+func currentIP(r *http.Request) string { return auth.ClientIP(r) }
 
 // ----- Pages -----
 
@@ -608,8 +582,11 @@ func shellArg(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// nodesEdit handles the unified Edit Node form: API-managed fields
-// (given_name, tags, owner user) and DB-managed fields (ipv4/ipv6/hostname).
+// nodesEdit applies the Edit Node form against Headscale's SQLite directly
+// (every column on the row, whitelisted by AllowedColumns). Diffs against
+// the current row so only changed columns are written. The Headscale API is
+// not used here — DB writes are the single source of truth, and the optional
+// "Restart Headscale after save" checkbox refreshes the in-memory NetMap.
 func (h *Handler) nodesEdit(w http.ResponseWriter, r *http.Request) {
 	if !h.checkCSRF(r) {
 		http.Error(w, "csrf", http.StatusForbidden)
@@ -706,21 +683,6 @@ func (h *Handler) nodesEdit(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/nodes", http.StatusSeeOther)
 }
 
-func sameStringSlice(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	am := map[string]bool{}
-	for _, s := range a {
-		am[s] = true
-	}
-	for _, s := range b {
-		if !am[s] {
-			return false
-		}
-	}
-	return true
-}
 
 // settingsSaveHeadscaleDB persists the local-DB editing config.
 func (h *Handler) settingsSaveHeadscaleDB(w http.ResponseWriter, r *http.Request) {
@@ -798,7 +760,12 @@ func (h *Handler) nodesWait(w http.ResponseWriter, r *http.Request) {
 		Redirect string
 	}
 	pd := pageData{basePage: bp, Redirect: "/nodes"}
-	if to := r.URL.Query().Get("to"); to != "" && strings.HasPrefix(to, "/") {
+	// Only accept same-origin paths. Reject `//evil.com` (protocol-relative)
+	// and any URL containing a scheme — those are open redirects.
+	if to := r.URL.Query().Get("to"); to != "" &&
+		strings.HasPrefix(to, "/") &&
+		!strings.HasPrefix(to, "//") &&
+		!strings.Contains(to, ":") {
 		pd.Redirect = to
 	}
 	if hs, _ := settings.GetHeadscale(h.db); hs.Address != "" {
@@ -1206,6 +1173,3 @@ func actorID(r *http.Request) *int64 {
 	return &id
 }
 
-// (compile-time guarantee): keep referenced symbols alive even if the package
-// shape changes during builds.
-var _ = errors.New

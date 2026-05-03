@@ -1,13 +1,10 @@
 package login
 
 import (
-	"crypto/rand"
 	"database/sql"
 	"embed"
-	"encoding/base64"
 	"html/template"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 
@@ -17,10 +14,6 @@ import (
 
 //go:embed templates/*.html
 var templateFS embed.FS
-
-const (
-	cookieCSRF = "lss_csrf"
-)
 
 type Handler struct {
 	db   *sql.DB
@@ -55,8 +48,9 @@ func New(d *sql.DB, log *slog.Logger, baseFS embed.FS, basePattern string) (*Han
 func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /login", h.show)
 	mux.HandleFunc("POST /login", h.submit)
+	// POST-only (no GET) and CSRF-protected — keeps drive-by-image attacks
+	// from logging the admin out via <img src="/logout">.
 	mux.HandleFunc("POST /logout", h.logout)
-	mux.HandleFunc("GET /logout", h.logout)
 }
 
 type page struct {
@@ -73,26 +67,10 @@ type page struct {
 }
 
 func (h *Handler) ensureCSRF(w http.ResponseWriter, r *http.Request) string {
-	if c, err := r.Cookie(cookieCSRF); err == nil && len(c.Value) >= 24 {
-		return c.Value
-	}
-	b := make([]byte, 24)
-	_, _ = rand.Read(b)
-	tok := base64.RawURLEncoding.EncodeToString(b)
-	http.SetCookie(w, &http.Cookie{
-		Name: cookieCSRF, Value: tok, Path: "/", HttpOnly: true,
-		SameSite: http.SameSiteLaxMode, MaxAge: 3600,
-	})
-	return tok
+	return auth.EnsureCSRFToken(w, r)
 }
 
-func (h *Handler) checkCSRF(r *http.Request) bool {
-	c, err := r.Cookie(cookieCSRF)
-	if err != nil {
-		return false
-	}
-	return r.FormValue("csrf") != "" && r.FormValue("csrf") == c.Value
-}
+func (h *Handler) checkCSRF(r *http.Request) bool { return auth.CheckCSRFToken(r) }
 
 func (h *Handler) render(w http.ResponseWriter, p page) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -106,19 +84,7 @@ func (h *Handler) show(w http.ResponseWriter, r *http.Request) {
 	h.render(w, page{CSRF: tok})
 }
 
-func clientIP(r *http.Request) string {
-	if x := r.Header.Get("X-Forwarded-For"); x != "" {
-		// HAProxy/NGINX set the original IP at index 0.
-		if i := strings.Index(x, ","); i >= 0 {
-			return strings.TrimSpace(x[:i])
-		}
-		return strings.TrimSpace(x)
-	}
-	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return h
-	}
-	return r.RemoteAddr
-}
+func clientIP(r *http.Request) string { return auth.ClientIP(r) }
 
 func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
@@ -207,6 +173,10 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
+	if !h.checkCSRF(r) {
+		http.Error(w, "csrf check failed", http.StatusForbidden)
+		return
+	}
 	if c, err := r.Cookie(auth.SessionCookieName); err == nil {
 		s, err := auth.LookupSession(h.db, c.Value)
 		if err == nil {

@@ -39,12 +39,43 @@ type pendingSession struct {
 	createdAt time.Time
 }
 
+// pendingTTL is how long a Begin* without a matching Finish* is kept around
+// before the sweeper drops it. WebAuthn ceremonies don't take this long.
+const pendingTTL = 5 * time.Minute
+
 func New(d *sql.DB, log *slog.Logger) *Handler {
-	return &Handler{
+	h := &Handler{
 		db:           d,
 		log:          log,
 		pending:      map[int64]*pendingSession{},
 		pendingLogin: map[string]*pendingSession{},
+	}
+	// Background sweeper so half-completed ceremonies don't pile up forever.
+	// (We also check the per-entry timestamp on Finish, but a never-finished
+	// session would otherwise live for the lifetime of the process.)
+	go func() {
+		t := time.NewTicker(pendingTTL)
+		defer t.Stop()
+		for range t.C {
+			h.sweepPending()
+		}
+	}()
+	return h
+}
+
+func (h *Handler) sweepPending() {
+	cutoff := time.Now().Add(-pendingTTL)
+	h.pendingMu.Lock()
+	defer h.pendingMu.Unlock()
+	for k, ps := range h.pending {
+		if ps.createdAt.Before(cutoff) {
+			delete(h.pending, k)
+		}
+	}
+	for k, ps := range h.pendingLogin {
+		if ps.createdAt.Before(cutoff) {
+			delete(h.pendingLogin, k)
+		}
 	}
 }
 
@@ -243,10 +274,15 @@ func (h *Handler) FinishLogin(r *http.Request) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("look up credential: %w", err)
 	}
-	_, _ = h.db.Exec(
+	if _, err := h.db.Exec(
 		`UPDATE webauthn_credentials SET sign_count = ?, last_used_at = CURRENT_TIMESTAMP WHERE credential_id = ?`,
 		cred.Authenticator.SignCount, cred.ID,
-	)
+	); err != nil {
+		// Replay protection depends on this advancing — surface failures so a
+		// stuck count is visible in journald, even if we still let the login
+		// succeed (the user just authenticated successfully).
+		h.log.Error("passkey: sign_count update failed", "err", err, "user_id", userID)
+	}
 	return userID, nil
 }
 
@@ -323,6 +359,3 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": msg})
 }
 
-// (kept for the "Settings → Passkeys" UI; the JS client base64url-encodes
-// IDs so the server treats them as []byte directly via Decode helpers).
-var _ = base64.RawURLEncoding

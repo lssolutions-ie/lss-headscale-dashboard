@@ -54,10 +54,6 @@ func IsSetupComplete(d *sql.DB) (bool, error) {
 	return v == "true", nil
 }
 
-func MarkSetupComplete(d *sql.DB) error {
-	return db.SetSetting(d, keySetupComplete, "true")
-}
-
 func GetSMTP(d *sql.DB) (SMTP, error) {
 	var s SMTP
 	v, ok, err := db.GetSetting(d, keySMTP)

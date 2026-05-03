@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -125,11 +126,33 @@ func main() {
 	}
 
 	// --- Setup wizard handler (only routes used while setup_complete=false) ---
-	signer, err := auth.NewSetupSigner()
+	// Load or create a persistent HMAC key so in-flight wizard sessions
+	// survive a service restart.
+	const setupKeyName = "setup_signing_key"
+	keyB64, _, err := db.GetSetting(d, setupKeyName)
 	if err != nil {
-		logger.Error("setup signer", "err", err)
+		logger.Error("read setup key", "err", err)
 		os.Exit(1)
 	}
+	var signingKey []byte
+	if keyB64 == "" {
+		signingKey, err = auth.GenerateSetupKey()
+		if err != nil {
+			logger.Error("generate setup key", "err", err)
+			os.Exit(1)
+		}
+		if err := db.SetSetting(d, setupKeyName, base64.StdEncoding.EncodeToString(signingKey)); err != nil {
+			logger.Error("persist setup key", "err", err)
+			os.Exit(1)
+		}
+	} else {
+		signingKey, err = base64.StdEncoding.DecodeString(keyB64)
+		if err != nil {
+			logger.Error("decode setup key", "err", err)
+			os.Exit(1)
+		}
+	}
+	signer := auth.NewSetupSigner(signingKey)
 	setupH, err := setup.New(d, signer, logger)
 	if err != nil {
 		logger.Error("setup handler", "err", err)
@@ -175,11 +198,7 @@ func main() {
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()})
 			return
 		}
-		ip := r.RemoteAddr
-		if x := r.Header.Get("X-Forwarded-For"); x != "" {
-			ip = x
-		}
-		s, err := auth.CreateSession(d, userID, ip, r.UserAgent())
+		s, err := auth.CreateSession(d, userID, auth.ClientIP(r), r.UserAgent())
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -231,7 +250,6 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
-		_ = http.Redirect
 	})
 
 	// Mount the auth-protected mux as a fallback for everything not matched above.

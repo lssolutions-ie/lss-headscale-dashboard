@@ -12,19 +12,26 @@ import (
 )
 
 // Setup-wizard state cookie: holds the pending admin's user_id, signed with
-// an in-memory HMAC key. The key is generated once at process start; restarting
-// the server invalidates pending wizard sessions, which is fine for a one-shot setup.
+// an HMAC key persisted in the dashboard's settings table so restarts don't
+// invalidate an in-flight wizard session.
 
 type SetupSigner struct {
 	key []byte
 }
 
-func NewSetupSigner() (*SetupSigner, error) {
+// NewSetupSigner returns a signer using the supplied 32-byte key. Use
+// LoadOrCreateSetupKey to fetch (or initialise) it from the settings store.
+func NewSetupSigner(key []byte) *SetupSigner {
+	return &SetupSigner{key: key}
+}
+
+// GenerateSetupKey returns a fresh 32-byte HMAC key. Callers persist it.
+func GenerateSetupKey() ([]byte, error) {
 	k := make([]byte, 32)
 	if _, err := rand.Read(k); err != nil {
 		return nil, err
 	}
-	return &SetupSigner{key: k}, nil
+	return k, nil
 }
 
 func (s *SetupSigner) Sign(userID int64) string {

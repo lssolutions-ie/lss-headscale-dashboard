@@ -157,9 +157,6 @@ func (c *Client) DeleteUser(ctx context.Context, name string) error {
 	return c.request(ctx, http.MethodDelete, "/api/v1/user/"+name, nil, nil)
 }
 
-func (c *Client) RenameUser(ctx context.Context, oldName, newName string) error {
-	return c.request(ctx, http.MethodPost, "/api/v1/user/"+oldName+"/rename/"+newName, nil, nil)
-}
 
 // Nodes
 func (c *Client) ListNodes(ctx context.Context, user string) ([]Node, error) {
@@ -184,16 +181,6 @@ func (c *Client) ExpireNode(ctx context.Context, id string) error {
 	return c.request(ctx, http.MethodPost, "/api/v1/node/"+id+"/expire", nil, nil)
 }
 
-func (c *Client) RenameNode(ctx context.Context, id, newName string) error {
-	return c.request(ctx, http.MethodPost, "/api/v1/node/"+id+"/rename/"+newName, nil, nil)
-}
-
-// MoveNodeToUser changes the owning user of a node. The endpoint exists in
-// Headscale's gRPC-Gateway even when not surfaced by the CLI.
-func (c *Client) MoveNodeToUser(ctx context.Context, nodeID, newUser string) error {
-	path := "/api/v1/node/" + nodeID + "/user?user=" + newUser
-	return c.request(ctx, http.MethodPost, path, nil, nil)
-}
 
 // SetNodeTags replaces the forced (admin-applied) tag list on a node.
 // Tags must be in the form "tag:name". Pass nil/empty to clear.
@@ -286,14 +273,10 @@ func (c *Client) userIDByName(ctx context.Context, name string) (uint64, error) 
 	return 0, fmt.Errorf("user %q not found in Headscale", name)
 }
 
-func (c *Client) ExpirePreAuthKey(ctx context.Context, user, key string) error {
-	uid, err := c.userIDByName(ctx, user)
-	if err != nil {
-		return err
-	}
-	body := map[string]any{"user": uid, "key": key}
-	return c.request(ctx, http.MethodPost, "/api/v1/preauthkey/expire", body, nil)
-}
+// Note: there is no ExpirePreAuthKey here. Headscale's API expire endpoint
+// silently no-ops on prefix-only keys (the original full key is never
+// persisted, and the endpoint matches by full key). Use
+// headscaledb.ExpirePreAuthKeyByID — direct DB UPDATE — instead.
 
 // TestConnection performs an authenticated Ping with a short timeout.
 // Returns nil on success.

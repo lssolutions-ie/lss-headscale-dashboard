@@ -44,18 +44,6 @@ func CreateAdmin(d *sql.DB, username, email, password string) (int64, error) {
 	return res.LastInsertId()
 }
 
-func GetByID(d *sql.DB, id int64) (*User, error) {
-	u := &User{}
-	err := d.QueryRow(`
-		SELECT id, username, email, password_hash, is_admin, created_at, updated_at
-		FROM users WHERE id = ?
-	`, id).Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.IsAdmin, &u.CreatedAt, &u.UpdatedAt)
-	if err != nil {
-		return nil, err
-	}
-	return u, nil
-}
-
 func StoreTOTPSecret(d *sql.DB, userID int64, secret string) error {
 	_, err := d.Exec(`
 		INSERT INTO totp_secrets (user_id, secret) VALUES (?, ?)

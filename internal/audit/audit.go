@@ -3,6 +3,7 @@ package audit
 import (
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"time"
 )
 
@@ -11,15 +12,11 @@ const (
 	ActionLoginFailure     = "auth.login.failure"
 	ActionLogout           = "auth.logout"
 	ActionPasswordChange   = "auth.password.change"
-	ActionWebauthnRegister = "auth.webauthn.register"
-	ActionSetupComplete    = "setup.complete"
 	ActionSettingsUpdate   = "settings.update"
 	ActionSMTPTest         = "smtp.test"
 	ActionUserCreate       = "headscale.user.create"
 	ActionUserDelete       = "headscale.user.delete"
-	ActionUserRename       = "headscale.user.rename"
 	ActionNodeExpire       = "headscale.node.expire"
-	ActionNodeRename       = "headscale.node.rename"
 	ActionNodeDelete       = "headscale.node.delete"
 	ActionPreAuthKeyCreate = "headscale.preauthkey.create"
 	ActionPreAuthKeyExpire = "headscale.preauthkey.expire"
@@ -41,10 +38,15 @@ func Write(d *sql.DB, actorUserID *int64, ip, action, target string, details map
 		b, _ := json.Marshal(details)
 		detailsJSON = string(b)
 	}
-	_, _ = d.Exec(`
+	_, err := d.Exec(`
 		INSERT INTO audit_log (actor_user_id, ip, action, target, details_json)
 		VALUES (?, ?, ?, ?, ?)
 	`, actorUserID, ip, action, target, detailsJSON)
+	if err != nil {
+		// The audit log is the chief forensics record; a silent failure leaves
+		// no trace. Surface to journald even though we can't tell the caller.
+		slog.Error("audit write failed", "err", err, "action", action, "target", target)
+	}
 }
 
 // List returns the most recent audit entries (newest first), paginated.
@@ -76,8 +78,3 @@ func List(d *sql.DB, limit, offset int) ([]Entry, error) {
 	return out, rows.Err()
 }
 
-func Count(d *sql.DB) (int, error) {
-	var n int
-	err := d.QueryRow(`SELECT COUNT(*) FROM audit_log`).Scan(&n)
-	return n, err
-}
