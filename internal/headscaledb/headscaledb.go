@@ -304,6 +304,10 @@ func jsonUnmarshalTags(s string, v *[]string) error { return jsonUnmarshal([]byt
 // DeletePreAuthKey removes a pre-auth key row from Headscale's pre_auth_keys
 // table by id. Headscale's HTTP API only exposes "expire", not delete, so
 // this is the only way to actually remove the row.
+//
+// Headscale enforces nodes.auth_key_id → pre_auth_keys.id at startup migration
+// time, so deleting a key that any node still references will crash Headscale.
+// This function refuses such deletes with a clear error.
 func (c *Client) DeletePreAuthKey(id int64) error {
 	if id <= 0 {
 		return fmt.Errorf("bad id: %d", id)
@@ -313,6 +317,15 @@ func (c *Client) DeletePreAuthKey(id int64) error {
 		return err
 	}
 	defer d.Close()
+
+	var refs int
+	if err := d.QueryRow("SELECT COUNT(*) FROM nodes WHERE auth_key_id = ?", id).Scan(&refs); err != nil {
+		return fmt.Errorf("check node refs: %w", err)
+	}
+	if refs > 0 {
+		return fmt.Errorf("refusing to delete: %d node(s) still reference this pre-auth key (auth_key_id=%d). Delete those nodes first, or just Expire the key to disable it", refs, id)
+	}
+
 	res, err := d.Exec("DELETE FROM pre_auth_keys WHERE id = ?", id)
 	if err != nil {
 		return err

@@ -18,23 +18,30 @@
 <div class="card">
     <div class="table-search-row d-flex gap-2 align-items-center">
         <input type="search" class="form-control form-control-sm" placeholder="Search across all columns…" data-search="#keys-table">
-        <select class="form-select form-select-sm" style="max-width:140px" data-filter="#keys-table" data-col="4">
+        <select class="form-select form-select-sm" style="max-width:140px" data-filter="#keys-table" data-col="5">
             <option value="">All states</option>
             <option value="active">active</option>
             <option value="expired">expired</option>
             <option value="used">used</option>
         </select>
-        <select class="form-select form-select-sm" style="max-width:160px" data-filter="#keys-table" data-col="1">
+        <select class="form-select form-select-sm" style="max-width:160px" data-filter="#keys-table" data-col="2">
             <option value="">All users</option>
             {{range .UsersList}}<option value="{{.}}">{{.}}</option>{{end}}
         </select>
+        {{if .DBEnabled}}
+        <button id="bulk-delete-btn" class="btn btn-sm btn-outline-danger ms-auto" disabled>Delete selected</button>
+        {{end}}
     </div>
     <div class="table-responsive">
         <table id="keys-table" class="table table-compact">
-            <thead><tr><th>Key (prefix)</th><th>User</th><th>Reusable</th><th>Ephemeral</th><th>State</th><th>Tags</th><th>Expires</th><th class="w-1"></th></tr></thead>
+            <thead><tr>
+                {{if .DBEnabled}}<th class="w-1"><input type="checkbox" id="select-all" class="form-check-input" title="Select all"></th>{{end}}
+                <th>Key (prefix)</th><th>User</th><th>Reusable</th><th>Ephemeral</th><th>State</th><th>Tags</th><th>Expires</th><th class="w-1"></th>
+            </tr></thead>
             <tbody>
             {{range .Keys}}
                 <tr>
+                    {{if $.DBEnabled}}<td><input type="checkbox" class="form-check-input row-check" value="{{.ID}}"></td>{{end}}
                     <td><code>{{truncate .Key 12}}</code></td>
                     <td>{{.User.Name}}</td>
                     <td>{{if .Reusable}}yes{{else}}no{{end}}</td>
@@ -67,12 +74,65 @@
                     </td>
                 </tr>
             {{else}}
-                <tr><td colspan="8" class="text-muted">No pre-auth keys yet.</td></tr>
+                <tr><td colspan="{{if .DBEnabled}}9{{else}}8{{end}}" class="text-muted">No pre-auth keys yet.</td></tr>
             {{end}}
             </tbody>
         </table>
     </div>
 </div>
+{{end}}
+
+{{if .DBEnabled}}
+<script>
+(function () {
+    const all = document.getElementById('select-all');
+    const checks = () => Array.from(document.querySelectorAll('.row-check'));
+    const btn = document.getElementById('bulk-delete-btn');
+    const csrf = "{{.CSRF}}";
+
+    function selectedIDs() {
+        return checks().filter(c => c.checked && c.offsetParent !== null).map(c => c.value);
+    }
+    function refresh() {
+        const n = selectedIDs().length;
+        btn.disabled = n === 0;
+        btn.textContent = n === 0 ? 'Delete selected' : `Delete selected (${n})`;
+        // Sync the header checkbox to the visible checkboxes' state.
+        const visible = checks().filter(c => c.offsetParent !== null);
+        const allOn = visible.length > 0 && visible.every(c => c.checked);
+        all.checked = allOn;
+        all.indeterminate = !allOn && visible.some(c => c.checked);
+    }
+    all?.addEventListener('change', () => {
+        checks().forEach(c => { if (c.offsetParent !== null) c.checked = all.checked; });
+        refresh();
+    });
+    document.addEventListener('change', e => { if (e.target.classList.contains('row-check')) refresh(); });
+    document.addEventListener('input', refresh); // search filter changes visible rows
+
+    btn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const ids = selectedIDs();
+        if (ids.length === 0) return;
+        if (!confirm(`Delete ${ids.length} pre-auth key(s)? Headscale will restart.\n\nKeys still referenced by any node will be skipped (delete the nodes first to remove their key history).`)) return;
+        const fd = new FormData();
+        fd.append('csrf', csrf);
+        ids.forEach(id => fd.append('ids', id));
+        btn.disabled = true; btn.textContent = 'Deleting…';
+        try {
+            const res = await fetch('/preauthkeys/delete-bulk', { method: 'POST', body: fd, redirect: 'follow' });
+            // Server responds 303 → /nodes/wait?to=/preauthkeys (or /preauthkeys on no-deletes)
+            if (res.redirected) location.href = res.url;
+            else location.reload();
+        } catch (err) {
+            alert('Bulk delete failed: ' + err.message);
+            btn.disabled = false; refresh();
+        }
+    });
+
+    refresh();
+})();
+</script>
 {{end}}
 
 <div class="modal" id="newKey" tabindex="-1">

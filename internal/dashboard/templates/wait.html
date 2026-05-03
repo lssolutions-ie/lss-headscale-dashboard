@@ -15,13 +15,19 @@
 (function () {
     const start = Date.now();
     const elapsed = document.getElementById('wait-elapsed');
+    const msg = document.getElementById('wait-msg');
     const fail = document.getElementById('wait-fail');
     const target = "{{.Redirect}}";
     let attempts = 0;
-    const max = 30;
+    const max = 90; // ~90 seconds — busy NetMap rebuilds (many nodes) can take a while
 
+    const baseMsg = msg.innerHTML;
     function tick() {
-        elapsed.textContent = Math.round((Date.now() - start) / 1000) + 's elapsed';
+        const sec = Math.round((Date.now() - start) / 1000);
+        elapsed.textContent = sec + 's elapsed';
+        if (sec >= 20 && msg.innerHTML === baseMsg) {
+            msg.innerHTML = baseMsg + '<br><span class="small">Still waiting — Headscale rebuilds the NetMap on startup; with many nodes this can take ~minute.</span>';
+        }
     }
     setInterval(tick, 250);
 

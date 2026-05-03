@@ -93,6 +93,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /preauthkeys/create", h.preAuthKeysCreate)
 	mux.HandleFunc("POST /preauthkeys/expire", h.preAuthKeysExpire)
 	mux.HandleFunc("POST /preauthkeys/delete", h.preAuthKeysDelete)
+	mux.HandleFunc("POST /preauthkeys/delete-bulk", h.preAuthKeysDeleteBulk)
 	mux.HandleFunc("GET /audit", h.auditPage)
 	h.RegisterTagRoutes(mux)
 	h.RegisterPolicyRoutes(mux)
@@ -967,6 +968,67 @@ func (h *Handler) preAuthKeysDelete(w http.ResponseWriter, r *http.Request) {
 	audit.Write(h.db, actorID(r), currentIP(r), audit.ActionPreAuthKeyExpire, idStr, map[string]any{"op": "delete"})
 	setFlash(w, "success", "Pre-auth key deleted.")
 	http.Redirect(w, r, "/nodes/wait?to=/preauthkeys", http.StatusSeeOther)
+}
+
+func (h *Handler) preAuthKeysDeleteBulk(w http.ResponseWriter, r *http.Request) {
+	if !h.checkCSRF(r) {
+		http.Error(w, "csrf", http.StatusForbidden)
+		return
+	}
+	hdb, _ := settings.GetHeadscaleDB(h.db)
+	if !hdb.Enabled || hdb.Path == "" {
+		setFlash(w, "danger", "Local Headscale DB is not enabled — required to delete pre-auth keys.")
+		http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	ids := r.PostForm["ids"]
+	if len(ids) == 0 {
+		setFlash(w, "warning", "No keys selected.")
+		http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
+		return
+	}
+	hdbClient := headscaledb.New(hdb)
+	var deleted int
+	var failures []string
+	for _, idStr := range ids {
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil || id <= 0 {
+			failures = append(failures, "id="+idStr+": bad id")
+			continue
+		}
+		if err := hdbClient.DeletePreAuthKey(id); err != nil {
+			failures = append(failures, fmt.Sprintf("id=%d: %v", id, err))
+			continue
+		}
+		deleted++
+	}
+	if deleted > 0 {
+		audit.Write(h.db, actorID(r), currentIP(r), audit.ActionPreAuthKeyExpire, fmt.Sprintf("%d", deleted), map[string]any{"op": "delete-bulk", "ids": ids, "failures": failures})
+		if _, err := hdbClient.RestartHeadscale(); err != nil {
+			setFlash(w, "warning", fmt.Sprintf("Deleted %d, but Headscale restart failed: %v", deleted, err))
+			http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
+			return
+		}
+	}
+	if len(failures) > 0 {
+		msg := fmt.Sprintf("Deleted %d. %d skipped: %s", deleted, len(failures), strings.Join(failures, "; "))
+		kind := "warning"
+		if deleted == 0 {
+			kind = "danger"
+		}
+		setFlash(w, kind, msg)
+	} else {
+		setFlash(w, "success", fmt.Sprintf("Deleted %d pre-auth key(s).", deleted))
+	}
+	if deleted > 0 {
+		http.Redirect(w, r, "/nodes/wait?to=/preauthkeys", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
 }
 
 func (h *Handler) preAuthKeysCreate(w http.ResponseWriter, r *http.Request) {
