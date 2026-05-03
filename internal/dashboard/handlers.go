@@ -92,6 +92,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /preauthkeys", h.preAuthKeys)
 	mux.HandleFunc("POST /preauthkeys/create", h.preAuthKeysCreate)
 	mux.HandleFunc("POST /preauthkeys/expire", h.preAuthKeysExpire)
+	mux.HandleFunc("POST /preauthkeys/delete", h.preAuthKeysDelete)
 	mux.HandleFunc("GET /audit", h.auditPage)
 	h.RegisterTagRoutes(mux)
 	h.RegisterPolicyRoutes(mux)
@@ -910,8 +911,12 @@ func (h *Handler) preAuthKeys(w http.ResponseWriter, r *http.Request) {
 		Users     []headscale.User
 		UsersList []string
 		NewKey    string
+		DBEnabled bool
 	}
 	pd := pageData{basePage: bp}
+	if hdb, _ := settings.GetHeadscaleDB(h.db); hdb.Enabled && hdb.Path != "" {
+		pd.DBEnabled = true
+	}
 	if v := r.URL.Query().Get("new"); v != "" {
 		pd.NewKey = v
 	}
@@ -928,6 +933,40 @@ func (h *Handler) preAuthKeys(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.render(w, "preauthkeys.html", pd)
+}
+
+func (h *Handler) preAuthKeysDelete(w http.ResponseWriter, r *http.Request) {
+	if !h.checkCSRF(r) {
+		http.Error(w, "csrf", http.StatusForbidden)
+		return
+	}
+	hdb, _ := settings.GetHeadscaleDB(h.db)
+	if !hdb.Enabled || hdb.Path == "" {
+		setFlash(w, "danger", "Local Headscale DB is not enabled — required to delete pre-auth keys.")
+		http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
+		return
+	}
+	idStr := r.FormValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		setFlash(w, "danger", "Bad pre-auth key id.")
+		http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
+		return
+	}
+	hdbClient := headscaledb.New(hdb)
+	if err := hdbClient.DeletePreAuthKey(id); err != nil {
+		setFlash(w, "danger", "Delete failed: "+err.Error())
+		http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
+		return
+	}
+	if _, err := hdbClient.RestartHeadscale(); err != nil {
+		setFlash(w, "warning", "Deleted, but Headscale restart failed: "+err.Error())
+		http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
+		return
+	}
+	audit.Write(h.db, actorID(r), currentIP(r), audit.ActionPreAuthKeyExpire, idStr, map[string]any{"op": "delete"})
+	setFlash(w, "success", "Pre-auth key deleted.")
+	http.Redirect(w, r, "/nodes/wait?to=/preauthkeys", http.StatusSeeOther)
 }
 
 func (h *Handler) preAuthKeysCreate(w http.ResponseWriter, r *http.Request) {

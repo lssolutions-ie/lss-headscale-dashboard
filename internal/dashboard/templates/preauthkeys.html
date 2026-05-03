@@ -47,14 +47,23 @@
                     <td>{{range .ACLTags}}<span class="tag-badge tag-forced">{{.}}</span>{{end}}</td>
                     <td><span class="text-muted small">{{.Expiration}}</span></td>
                     <td>
-                        {{if and (not .Used) (not .IsExpired)}}
-                        <form method="post" action="/preauthkeys/expire" class="m-0" onsubmit="return confirm('Expire this key?');">
-                            <input type="hidden" name="csrf" value="{{$.CSRF}}">
-                            <input type="hidden" name="user" value="{{.User.Name}}">
-                            <input type="hidden" name="key" value="{{.Key}}">
-                            <button class="btn btn-sm btn-outline-warning">Expire</button>
-                        </form>
-                        {{end}}
+                        <div class="btn-list">
+                            {{if and (not .Used) (not .IsExpired)}}
+                            <form method="post" action="/preauthkeys/expire" class="m-0" onsubmit="return confirm('Expire this key?');">
+                                <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                                <input type="hidden" name="user" value="{{.User.Name}}">
+                                <input type="hidden" name="key" value="{{.Key}}">
+                                <button class="btn btn-sm btn-outline-warning">Expire</button>
+                            </form>
+                            {{end}}
+                            {{if $.DBEnabled}}
+                            <form method="post" action="/preauthkeys/delete" class="m-0" onsubmit="return confirm('Delete this pre-auth key from the DB? Cannot be undone — Headscale will restart.');">
+                                <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                                <input type="hidden" name="id" value="{{.ID}}">
+                                <button class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
+                            {{end}}
+                        </div>
                     </td>
                 </tr>
             {{else}}

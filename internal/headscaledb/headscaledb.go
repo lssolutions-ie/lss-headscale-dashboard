@@ -301,6 +301,29 @@ func jsonMarshalTags(v []string) (string, error) {
 }
 func jsonUnmarshalTags(s string, v *[]string) error { return jsonUnmarshal([]byte(s), v) }
 
+// DeletePreAuthKey removes a pre-auth key row from Headscale's pre_auth_keys
+// table by id. Headscale's HTTP API only exposes "expire", not delete, so
+// this is the only way to actually remove the row.
+func (c *Client) DeletePreAuthKey(id int64) error {
+	if id <= 0 {
+		return fmt.Errorf("bad id: %d", id)
+	}
+	d, err := c.open()
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	res, err := d.Exec("DELETE FROM pre_auth_keys WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("no pre-auth key with id=%d", id)
+	}
+	return nil
+}
+
 // RestartHeadscale runs the configured restart command (default uses sudo +
 // systemctl). Returns combined stdout/stderr and any error.
 func (c *Client) RestartHeadscale() (string, error) {
