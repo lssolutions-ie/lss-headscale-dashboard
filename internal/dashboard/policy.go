@@ -145,6 +145,165 @@ func buildPolicyChoices(p *ParsedPolicy, users []headscale.User) (actors, member
 	return
 }
 
+// splitHostPort splits an ACL `dst` entry like `tag:server:22,80` into
+// ("tag:server", "22,80"). Returns the whole string as host with empty
+// port if no separator found.
+func splitHostPort(s string) (host, port string) {
+	i := strings.LastIndex(s, ":")
+	if i < 0 {
+		return s, ""
+	}
+	return s[:i], s[i+1:]
+}
+
+// renameTagInPolicy walks every reference to oldTag and rewrites it to newTag:
+// tagOwners map key, ACL src/dst, SSH src/dst.
+func renameTagInPolicy(p *ParsedPolicy, oldTag, newTag string) {
+	if p == nil || oldTag == newTag {
+		return
+	}
+	if p.TagOwners != nil {
+		if owners, ok := p.TagOwners[oldTag]; ok {
+			p.TagOwners[newTag] = owners
+			delete(p.TagOwners, oldTag)
+		}
+	}
+	for i := range p.ACLs {
+		p.ACLs[i].Src = renameInList(p.ACLs[i].Src, oldTag, newTag)
+		p.ACLs[i].Dst = renameInDstList(p.ACLs[i].Dst, oldTag, newTag)
+	}
+	for i := range p.SSH {
+		p.SSH[i].Src = renameInList(p.SSH[i].Src, oldTag, newTag)
+		p.SSH[i].Dst = renameInDstList(p.SSH[i].Dst, oldTag, newTag)
+	}
+}
+
+// deleteTagFromPolicy removes the tag from tagOwners and from every ACL/SSH
+// rule. If a rule's src or dst becomes empty as a result, the rule itself
+// is dropped (Headscale would reject an empty-src or empty-dst rule).
+func deleteTagFromPolicy(p *ParsedPolicy, tag string) {
+	if p == nil {
+		return
+	}
+	delete(p.TagOwners, tag)
+	p.ACLs = filterACLRules(p.ACLs, tag)
+	p.SSH = filterSSHRules(p.SSH, tag)
+}
+
+func filterACLRules(rules []ACLRule, tag string) []ACLRule {
+	var keep []ACLRule
+	for _, r := range rules {
+		r.Src = filterOut(r.Src, tag)
+		r.Dst = filterOutDst(r.Dst, tag)
+		if len(r.Src) == 0 || len(r.Dst) == 0 {
+			continue
+		}
+		keep = append(keep, r)
+	}
+	return keep
+}
+
+func filterSSHRules(rules []SSHRule, tag string) []SSHRule {
+	var keep []SSHRule
+	for _, r := range rules {
+		r.Src = filterOut(r.Src, tag)
+		r.Dst = filterOutDst(r.Dst, tag)
+		if len(r.Src) == 0 || len(r.Dst) == 0 {
+			continue
+		}
+		keep = append(keep, r)
+	}
+	return keep
+}
+
+func renameInList(in []string, old, new string) []string {
+	out := make([]string, len(in))
+	for i, v := range in {
+		if v == old {
+			out[i] = new
+		} else {
+			out[i] = v
+		}
+	}
+	return out
+}
+
+func renameInDstList(in []string, old, new string) []string {
+	out := make([]string, len(in))
+	for i, v := range in {
+		host, port := splitHostPort(v)
+		if host == old {
+			host = new
+		}
+		if port == "" {
+			out[i] = host
+		} else {
+			out[i] = host + ":" + port
+		}
+	}
+	return out
+}
+
+func filterOut(in []string, x string) []string {
+	out := in[:0]
+	for _, v := range in {
+		if v != x {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func filterOutDst(in []string, x string) []string {
+	out := in[:0]
+	for _, v := range in {
+		host, _ := splitHostPort(v)
+		if host != x {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// countTagRefs counts how many ACL + SSH rules reference the tag (in src or dst).
+func countTagRefs(p *ParsedPolicy, tag string) int {
+	if p == nil {
+		return 0
+	}
+	n := 0
+	for _, r := range p.ACLs {
+		for _, s := range r.Src {
+			if s == tag {
+				n++
+				break
+			}
+		}
+		for _, d := range r.Dst {
+			host, _ := splitHostPort(d)
+			if host == tag {
+				n++
+				break
+			}
+		}
+	}
+	for _, r := range p.SSH {
+		for _, s := range r.Src {
+			if s == tag {
+				n++
+				break
+			}
+		}
+		for _, d := range r.Dst {
+			host, _ := splitHostPort(d)
+			if host == tag {
+				n++
+				break
+			}
+		}
+	}
+	return n
+}
+
 func sortStrings(s *[]string) {
 	// stable + dedupe
 	seen := map[string]bool{}

@@ -93,6 +93,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /preauthkeys/create", h.preAuthKeysCreate)
 	mux.HandleFunc("POST /preauthkeys/expire", h.preAuthKeysExpire)
 	mux.HandleFunc("GET /audit", h.auditPage)
+	h.RegisterTagRoutes(mux)
 	h.RegisterPolicyRoutes(mux)
 	mux.HandleFunc("GET /settings", h.settings)
 	mux.HandleFunc("POST /settings/headscale", h.settingsSaveHeadscale)

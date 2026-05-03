@@ -1,0 +1,128 @@
+{{define "title"}}Tags{{end}}
+{{define "content"}}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="page-title m-0">Tags <span class="text-muted ms-2 fs-5">{{len .Rows}}</span></h2>
+</div>
+
+{{if .HeadscaleError}}
+<div class="alert alert-warning"><strong>Headscale connection:</strong> {{.HeadscaleError}} <a href="/settings#headscale" class="alert-link">Configure</a></div>
+{{else}}
+
+<div class="card mb-3">
+    <div class="card-header"><h3 class="card-title">Add tag</h3></div>
+    <div class="card-body">
+        <form method="post" action="/tags/add" data-chips>
+            <input type="hidden" name="csrf" value="{{.CSRF}}">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Tag <small class="text-muted">(must start with <code>tag:</code>)</small></label>
+                    <input type="text" name="tag" class="form-control" placeholder="tag:server" required>
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Owners</label>
+                    <div class="chip-pad" data-input="#tagsadd-owners">
+                        {{range .Members}}<button type="button" class="btn btn-sm btn-outline-primary chip" data-value="{{.}}">{{.}}</button>{{end}}
+                    </div>
+                    <input type="hidden" name="owners" id="tagsadd-owners" required>
+                </div>
+            </div>
+            <button class="btn btn-primary mt-3">Add tag</button>
+        </form>
+    </div>
+</div>
+
+<div class="card allow-overflow">
+    <div class="table-responsive">
+        <table class="table table-compact">
+            <thead>
+                <tr>
+                    <th>Tag</th>
+                    <th>Owners</th>
+                    <th class="text-end">Nodes</th>
+                    <th class="text-end">Keys</th>
+                    <th class="text-end">Rules</th>
+                    <th class="w-1"></th>
+                </tr>
+            </thead>
+            <tbody>
+            {{range .Rows}}
+                <tr>
+                    <td>
+                        <code>{{.Tag}}</code>
+                        {{if .Orphan}}<span class="badge bg-warning text-dark ms-2">orphan</span>{{end}}
+                    </td>
+                    <td>
+                        {{if .Owners}}
+                            {{range $i, $o := .Owners}}{{if $i}}, {{end}}<small><code>{{$o}}</code></small>{{end}}
+                        {{else}}
+                            <small class="text-muted">— not in tagOwners —</small>
+                        {{end}}
+                    </td>
+                    <td class="text-end">{{.NodeUses}}</td>
+                    <td class="text-end">{{.KeyUses}}</td>
+                    <td class="text-end">{{.RuleRefs}}</td>
+                    <td>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" data-bs-strategy="fixed">Actions</button>
+                            <div class="dropdown-menu dropdown-menu-end p-2" style="min-width: 280px">
+                                <form method="post" action="/tags/rename" class="m-0 mb-2">
+                                    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                                    <input type="hidden" name="old" value="{{.Tag}}">
+                                    <label class="form-label small mb-1">Rename to</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" name="new" class="form-control" value="{{.Tag}}" required>
+                                        <button class="btn btn-primary" type="submit">Rename</button>
+                                    </div>
+                                </form>
+                                <form method="post" action="/tags/delete" class="m-0" onsubmit="return confirm('Delete {{.Tag}} from policy + every node + every pre-auth key? This cannot be undone.');">
+                                    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                                    <input type="hidden" name="tag" value="{{.Tag}}">
+                                    <button class="btn btn-sm btn-outline-danger w-100">Delete tag everywhere</button>
+                                </form>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            {{else}}
+                <tr><td colspan="6" class="text-muted">No tags defined yet.</td></tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<small class="text-muted d-block mt-3">
+    Rename / Delete walks the ACL policy (<code>tagOwners</code>, <code>acls</code>, <code>ssh</code>),
+    the <code>nodes.tags</code> JSON column, and the <code>pre_auth_keys.tags</code> JSON column,
+    then restarts Headscale so the in-memory NetMap reloads.
+    Requires Local Headscale DB to be enabled in Settings.
+</small>
+
+<script>
+(function () {
+    document.querySelectorAll('.chip-pad').forEach(pad => {
+        const input = document.querySelector(pad.dataset.input);
+        if (!input) return;
+        const refresh = () => {
+            const have = (input.value || '').split(',').map(s => s.trim()).filter(Boolean);
+            pad.querySelectorAll('.chip').forEach(b => {
+                const on = have.includes(b.dataset.value);
+                b.classList.toggle('btn-primary', on);
+                b.classList.toggle('btn-outline-primary', !on);
+            });
+        };
+        pad.querySelectorAll('.chip').forEach(btn => {
+            btn.addEventListener('click', () => {
+                let have = (input.value || '').split(',').map(s => s.trim()).filter(Boolean);
+                const i = have.indexOf(btn.dataset.value);
+                if (i >= 0) have.splice(i, 1); else have.push(btn.dataset.value);
+                input.value = have.join(', ');
+                refresh();
+            });
+        });
+        refresh();
+    });
+})();
+</script>
+{{end}}
+{{end}}

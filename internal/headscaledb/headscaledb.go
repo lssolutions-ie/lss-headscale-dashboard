@@ -9,6 +9,7 @@ package headscaledb
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -19,6 +20,11 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/settings"
+)
+
+var (
+	jsonMarshal   = json.Marshal
+	jsonUnmarshal = json.Unmarshal
 )
 
 const DefaultPath = "/var/lib/headscale/db.sqlite"
@@ -189,6 +195,111 @@ func (c *Client) UpdateNodeFields(nodeID string, fields map[string]string) (int6
 	}
 	return res.RowsAffected()
 }
+
+// rewriteTagsTables is a single-table-name whitelist; pass anything else and
+// the call refuses to run. Both Headscale tables that store a JSON-encoded
+// list of tags use the column name "tags".
+var rewriteTagsTables = map[string]bool{"nodes": true, "pre_auth_keys": true}
+
+// RewriteTags walks a tag-bearing table and rewrites the JSON tag list per
+// row using `f`. Returns the number of rows actually changed.
+//
+// Use case: rename a tag everywhere it appears, or delete it. The function
+// parses the existing JSON, calls f, marshals the new list, and updates only
+// when the list actually changed.
+func (c *Client) RewriteTags(table string, f func([]string) []string) (int64, error) {
+	if !rewriteTagsTables[table] {
+		return 0, fmt.Errorf("refusing to rewrite tags in table %q", table)
+	}
+	d, err := c.open()
+	if err != nil {
+		return 0, err
+	}
+	defer d.Close()
+
+	type row struct {
+		id   int64
+		tags string
+	}
+	rs, err := d.Query("SELECT id, COALESCE(tags, '') FROM " + table)
+	if err != nil {
+		return 0, err
+	}
+	var rows []row
+	for rs.Next() {
+		var r row
+		if err := rs.Scan(&r.id, &r.tags); err != nil {
+			rs.Close()
+			return 0, err
+		}
+		rows = append(rows, r)
+	}
+	rs.Close()
+
+	tx, err := d.Begin()
+	if err != nil {
+		return 0, err
+	}
+	var changed int64
+	for _, r := range rows {
+		var current []string
+		if r.tags != "" {
+			if err := jsonUnmarshalTags(r.tags, &current); err != nil {
+				continue
+			}
+		}
+		next := f(append([]string(nil), current...))
+		if stringSlicesEqual(current, next) {
+			continue
+		}
+		var nextJSON string
+		if len(next) > 0 {
+			b, err := jsonMarshalTags(next)
+			if err != nil {
+				_ = tx.Rollback()
+				return changed, err
+			}
+			nextJSON = b
+		}
+		if _, err := tx.Exec("UPDATE "+table+" SET tags = ? WHERE id = ?", nullIfEmpty(nextJSON), r.id); err != nil {
+			_ = tx.Rollback()
+			return changed, err
+		}
+		changed++
+	}
+	if err := tx.Commit(); err != nil {
+		return changed, err
+	}
+	return changed, nil
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+// jsonMarshal/Unmarshal as helpers so the file doesn't need encoding/json
+// imported at the top (which would be inconsistent with the rest of the
+// package's bare imports).
+func jsonMarshalTags(v []string) (string, error) {
+	b, err := jsonMarshal(v)
+	return string(b), err
+}
+func jsonUnmarshalTags(s string, v *[]string) error { return jsonUnmarshal([]byte(s), v) }
 
 // RestartHeadscale runs the configured restart command (default uses sudo +
 // systemctl). Returns combined stdout/stderr and any error.
