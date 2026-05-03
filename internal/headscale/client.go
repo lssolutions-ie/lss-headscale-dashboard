@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -240,8 +241,14 @@ func (c *Client) ListPreAuthKeys(ctx context.Context, user string) ([]PreAuthKey
 }
 
 func (c *Client) CreatePreAuthKey(ctx context.Context, user string, reusable, ephemeral bool, aclTags []string, expirationISO string) (*PreAuthKey, error) {
+	// Headscale 0.28's proto expects `user` as uint64, not a name. Look up the
+	// numeric user ID from the supplied name and pass that.
+	uid, err := c.userIDByName(ctx, user)
+	if err != nil {
+		return nil, err
+	}
 	body := map[string]any{
-		"user":      user,
+		"user":      uid,
 		"reusable":  reusable,
 		"ephemeral": ephemeral,
 	}
@@ -258,6 +265,25 @@ func (c *Client) CreatePreAuthKey(ctx context.Context, user string, reusable, ep
 		return nil, err
 	}
 	return &resp.PreAuthKey, nil
+}
+
+// userIDByName resolves a user name to its numeric Headscale user ID
+// (uint64). Used by RPCs whose proto expects a uint64 user_id.
+func (c *Client) userIDByName(ctx context.Context, name string) (uint64, error) {
+	users, err := c.ListUsers(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("list users: %w", err)
+	}
+	for _, u := range users {
+		if u.Name == name {
+			id, err := strconv.ParseUint(u.ID, 10, 64)
+			if err != nil {
+				return 0, fmt.Errorf("user %q has non-numeric id %q", name, u.ID)
+			}
+			return id, nil
+		}
+	}
+	return 0, fmt.Errorf("user %q not found in Headscale", name)
 }
 
 func (c *Client) ExpirePreAuthKey(ctx context.Context, user, key string) error {
