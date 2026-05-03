@@ -16,10 +16,10 @@
                     <input type="hidden" name="csrf" value="{{.CSRF}}">
                     <div class="row g-3">
                         <div class="col-md-6"><label class="form-label">Owner user
-                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="Owner user" data-bs-content="The Headscale user that will own the new node. Required. Tags only work after registration if this user is listed under tagOwners for the chosen tags in your ACL policy.">i</a>
+                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="Owner user" data-bs-content="The Headscale user that owns the auth key. Pick a real user; if the node advertises tags allowed by tagOwners, Headscale automatically moves it to the virtual 'tagged-devices' user after registration.">i</a>
                             </label>
                             <select name="user" class="form-select" required>
-                                {{range .UsersList}}<option value="{{.}}">{{.}}</option>{{else}}<option value="" disabled>(no users — create one first)</option>{{end}}
+                                {{range .RealUsers}}<option value="{{.}}">{{.}}</option>{{else}}<option value="" disabled>(no users — create one first)</option>{{end}}
                             </select>
                         </div>
                         <div class="col-md-6"><label class="form-label">Hostname <small class="text-muted"><code>--hostname</code></small>

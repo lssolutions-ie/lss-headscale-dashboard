@@ -336,7 +336,8 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 	type pageData struct {
 		basePage
 		Nodes      []headscale.Node
-		UsersList  []string
+		UsersList  []string // values present on existing nodes (incl. virtual 'tagged-devices') — for the table filter
+		RealUsers  []string // actual Headscale users from ListUsers — for Register Node dropdown
 		TagsList   []string
 		DBEnabled  bool
 		DBNodes    map[string]headscaledb.FullNode
@@ -371,6 +372,17 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 			pd.Nodes = ns
 			pd.UsersList = uniqueUsersFromNodes(ns)
 			pd.TagsList = uniqueTagsFromNodes(ns)
+		}
+		// Real Headscale users (for the Register Node "Owner user" dropdown).
+		// `tagged-devices` is a virtual user Headscale auto-assigns to tagged
+		// nodes — it isn't a real user and can't own a pre-auth key.
+		if realUsers, err := c.ListUsers(ctx); err == nil {
+			for _, u := range realUsers {
+				if u.Name != "" {
+					pd.RealUsers = append(pd.RealUsers, u.Name)
+				}
+			}
+			sort.Strings(pd.RealUsers)
 		}
 		// Tags defined as keys of tagOwners in the ACL policy.
 		if pol, err := c.GetPolicy(ctx); err == nil {
