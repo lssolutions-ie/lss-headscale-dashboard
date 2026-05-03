@@ -114,7 +114,8 @@ func loadUser(d *sql.DB, userID int64) (*userAdapter, error) {
 		return nil, err
 	}
 	rows, err := d.Query(`
-		SELECT credential_id, public_key, sign_count, COALESCE(aaguid, X'')
+		SELECT credential_id, public_key, sign_count, COALESCE(aaguid, X''),
+		       backup_eligible, backup_state
 		FROM webauthn_credentials WHERE user_id = ?
 	`, userID)
 	if err != nil {
@@ -124,10 +125,13 @@ func loadUser(d *sql.DB, userID int64) (*userAdapter, error) {
 	for rows.Next() {
 		var c webauthn.Credential
 		var aaguid []byte
-		if err := rows.Scan(&c.ID, &c.PublicKey, &c.Authenticator.SignCount, &aaguid); err != nil {
+		var beEligible, beState bool
+		if err := rows.Scan(&c.ID, &c.PublicKey, &c.Authenticator.SignCount, &aaguid, &beEligible, &beState); err != nil {
 			return nil, err
 		}
 		c.Authenticator.AAGUID = aaguid
+		c.Flags.BackupEligible = beEligible
+		c.Flags.BackupState = beState
 		u.creds = append(u.creds, c)
 	}
 	return u, nil
@@ -288,9 +292,12 @@ func (h *Handler) FinishRegister(w http.ResponseWriter, r *http.Request, userID 
 		return
 	}
 	if _, err := h.db.Exec(`
-		INSERT INTO webauthn_credentials (user_id, credential_id, public_key, sign_count, aaguid, label)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, userID, cred.ID, cred.PublicKey, cred.Authenticator.SignCount, cred.Authenticator.AAGUID, label); err != nil {
+		INSERT INTO webauthn_credentials (
+			user_id, credential_id, public_key, sign_count, aaguid, label,
+			backup_eligible, backup_state
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, userID, cred.ID, cred.PublicKey, cred.Authenticator.SignCount, cred.Authenticator.AAGUID, label,
+		cred.Flags.BackupEligible, cred.Flags.BackupState); err != nil {
 		writeErr(w, 500, "save: "+err.Error())
 		return
 	}
