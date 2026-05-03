@@ -336,6 +336,7 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 		basePage
 		Nodes      []headscale.Node
 		UsersList  []string
+		TagsList   []string
 		DBEnabled  bool
 		DBNodes    map[string]headscaledb.FullNode
 		DBColumns  []string
@@ -368,6 +369,7 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 		} else {
 			pd.Nodes = ns
 			pd.UsersList = uniqueUsersFromNodes(ns)
+			pd.TagsList = uniqueTagsFromNodes(ns)
 		}
 		// Tags defined as keys of tagOwners in the ACL policy.
 		if pol, err := c.GetPolicy(ctx); err == nil {
@@ -823,6 +825,21 @@ func uniqueUsersFromNodes(nodes []headscale.Node) []string {
 			out = append(out, n.User.Name)
 		}
 	}
+	return out
+}
+
+func uniqueTagsFromNodes(nodes []headscale.Node) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range nodes {
+		for _, t := range n.Tags {
+			if !seen[t] {
+				seen[t] = true
+				out = append(out, t)
+			}
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 

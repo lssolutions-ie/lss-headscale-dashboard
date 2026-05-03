@@ -347,6 +347,10 @@
             <option value="">All users</option>
             {{range .UsersList}}<option value="{{.}}">{{.}}</option>{{end}}
         </select>
+        <select class="form-select form-select-sm" style="max-width:160px" data-filter="#nodes-table" data-col="4">
+            <option value="">All tags</option>
+            {{range .TagsList}}<option value="{{.}}">{{.}}</option>{{end}}
+        </select>
         {{if not .DBEnabled}}<small class="text-muted ms-auto">DB editing disabled — <a href="/settings#headscale-db">enable</a> to edit IP / hostname</small>{{end}}
     </div>
     <div class="table-responsive">
