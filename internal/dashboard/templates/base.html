@@ -33,6 +33,18 @@
         .advanced-flags .adv-flag { font-family: ui-monospace,Menlo,monospace; font-size: 0.78rem; font-weight: 500; color: #1f2937; white-space: nowrap; }
         .advanced-flags .adv-hint { font-family: system-ui,-apple-system,sans-serif; font-weight: 400; color: #9ca3af; font-size: 0.72rem; }
         .advanced-flags .form-switch .form-check-input { margin-right: 0.4rem; }
+        /* Inline "i" info icon — clickable, opens a Bootstrap popover */
+        .info-i {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 14px; height: 14px; border-radius: 50%;
+            background: #e5e7eb; color: #4b5563;
+            font-size: 0.65rem; font-weight: 700; font-style: italic;
+            margin-left: 0.3rem; cursor: pointer; text-decoration: none;
+            line-height: 1; vertical-align: middle;
+        }
+        .info-i:hover, .info-i:focus { background: #93c5fd; color: #1e3a8a; outline: none; }
+        .popover { max-width: 320px; }
+        .popover .popover-header { font-family: ui-monospace,Menlo,monospace; font-size: 0.78rem; }
     </style>
 </head>
 <body>

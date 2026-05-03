@@ -15,15 +15,21 @@
                 <form id="register-node-form">
                     <input type="hidden" name="csrf" value="{{.CSRF}}">
                     <div class="row g-3">
-                        <div class="col-md-6"><label class="form-label">Owner user</label>
+                        <div class="col-md-6"><label class="form-label">Owner user
+                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="Owner user" data-bs-content="The Headscale user that will own the new node. Required. Tags only work after registration if this user is listed under tagOwners for the chosen tags in your ACL policy.">i</a>
+                            </label>
                             <select name="user" class="form-select" required>
                                 {{range .UsersList}}<option value="{{.}}">{{.}}</option>{{else}}<option value="" disabled>(no users — create one first)</option>{{end}}
                             </select>
                         </div>
-                        <div class="col-md-6"><label class="form-label">Hostname <small class="text-muted">(<code>--hostname</code>)</small></label>
+                        <div class="col-md-6"><label class="form-label">Hostname <small class="text-muted"><code>--hostname</code></small>
+                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--hostname" data-bs-content="Override the hostname Tailscale reports. The OS hostname is used by default. Independent of --nickname (display name in admin UI).">i</a>
+                            </label>
                             <input type="text" name="hostname" class="form-control" placeholder="my-host">
                         </div>
-                        <div class="col-12"><label class="form-label">ACL tags <small class="text-muted">(comma-separated, must match <code>tagOwners</code>)</small></label>
+                        <div class="col-12"><label class="form-label">ACL tags <small class="text-muted">(comma-separated, must match <code>tagOwners</code>)</small>
+                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="ACL tags" data-bs-content="Tags this node advertises on connection. Each must start with `tag:` and be defined under tagOwners in your ACL policy. Tags advertised that aren't allowed by tagOwners end up in invalidTags (visible on the node row).">i</a>
+                            </label>
                             <input type="text" name="tags" class="form-control" id="reg-tags-input" placeholder="tag:server, tag:db">
                             {{if .KnownTags}}
                             <div class="mt-2 d-flex flex-wrap gap-1" id="reg-tag-chips">
@@ -32,10 +38,16 @@
                             </div>
                             {{end}}
                         </div>
-                        <div class="col-md-6 form-check ms-3"><input type="checkbox" name="reusable" id="reg-reusable" class="form-check-input"><label class="form-check-label" for="reg-reusable">Reusable</label></div>
-                        <div class="col-md-5 form-check"><input type="checkbox" name="ephemeral" id="reg-ephemeral" class="form-check-input"><label class="form-check-label" for="reg-ephemeral">Ephemeral (auto-removed when offline)</label></div>
+                        <div class="col-md-6 form-check ms-3"><input type="checkbox" name="reusable" id="reg-reusable" class="form-check-input"><label class="form-check-label" for="reg-reusable">Reusable
+                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="Reusable" data-bs-content="Allow this auth key to register multiple nodes. Without this, the key is single-use — one device registers and the key is consumed.">i</a>
+                            </label></div>
+                        <div class="col-md-5 form-check"><input type="checkbox" name="ephemeral" id="reg-ephemeral" class="form-check-input"><label class="form-check-label" for="reg-ephemeral">Ephemeral (auto-removed when offline)
+                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="Ephemeral" data-bs-content="Nodes registered with this key are automatically removed from Headscale when they go offline for the inactivity timeout. Use for short-lived containers / CI runners.">i</a>
+                            </label></div>
                         <div class="col-12">
-                            <label class="form-label">Key expiration <small class="text-muted">(optional — when this auth key stops accepting new registrations)</small></label>
+                            <label class="form-label">Key expiration <small class="text-muted">(optional — when this auth key stops accepting new registrations)</small>
+                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="Key expiration" data-bs-content="When this auth key stops accepting new registrations. Already-registered nodes are unaffected — they have their own expiry stored on the node row (edit there for session expiry).">i</a>
+                            </label>
                             <div class="input-group">
                                 <input type="datetime-local" name="expiration" class="form-control" id="reg-exp">
                                 <button type="button" class="btn btn-outline-secondary" data-exp="1h">+1h</button>
@@ -46,7 +58,9 @@
                             </div>
                             <small class="form-hint">Affects only this auth key. Already-registered nodes have their own <code>expiry</code> on the row (edit there for session expiry).</small>
                         </div>
-                        <div class="col-12"><label class="form-label">Login server URL <small class="text-muted">(<code>--login-server</code>)</small></label>
+                        <div class="col-12"><label class="form-label">Login server URL <small class="text-muted"><code>--login-server</code></small>
+                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--login-server" data-bs-content="Public URL Tailscale clients reach Headscale at — this is your Headscale server_url, not the API URL the dashboard uses. Set in Settings → Headscale → Public client URL.">i</a>
+                            </label>
                             <input type="text" name="login_server" class="form-control" value="{{.ClientURL}}" placeholder="https://headscale.example.com" required>
                             <small class="form-hint">Tailscale clients use this URL to connect. Defaults from Settings → Headscale → Public client URL.</small>
                         </div>
@@ -59,13 +73,17 @@
                             <div class="adv-section-title">Network</div>
                             <div class="row g-3">
                                 <div class="col-sm-6 col-md-3">
-                                    <label class="form-label adv-flag">--accept-dns</label>
+                                    <label class="form-label adv-flag">--accept-dns
+                                        <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--accept-dns" data-bs-content="Accept DNS configuration from Headscale (MagicDNS, search domains, name servers). Default: yes. Set to no on hosts that already manage their own DNS.">i</a>
+                                    </label>
                                     <select name="accept_dns" class="form-select form-select-sm">
                                         <option value="">default (yes)</option><option value="true">yes</option><option value="false">no</option>
                                     </select>
                                 </div>
                                 <div class="col-sm-6 col-md-3">
-                                    <label class="form-label adv-flag">--accept-routes</label>
+                                    <label class="form-label adv-flag">--accept-routes
+                                        <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--accept-routes" data-bs-content="Install routes that other nodes have advertised (subnet routes / exit nodes). Default: no on Linux, yes on most other platforms.">i</a>
+                                    </label>
                                     <select name="accept_routes" class="form-select form-select-sm">
                                         <option value="">default (no)</option><option value="true">yes</option><option value="false">no</option>
                                     </select>
@@ -73,21 +91,29 @@
                                 <div class="col-sm-6 col-md-3 d-flex align-items-end pb-1">
                                     <div class="form-check form-switch">
                                         <input type="checkbox" name="advertise_exit_node" id="rn-aex" class="form-check-input" role="switch">
-                                        <label for="rn-aex" class="form-check-label adv-flag">--advertise-exit-node</label>
+                                        <label for="rn-aex" class="form-check-label adv-flag">--advertise-exit-node
+                                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--advertise-exit-node" data-bs-content="Offer this node as an exit node so other nodes can route their internet traffic through it. Headscale must approve via ACL or the admin must enable it on the node row.">i</a>
+                                        </label>
                                     </div>
                                 </div>
                                 <div class="col-sm-6 col-md-3 d-flex align-items-end pb-1">
                                     <div class="form-check form-switch">
                                         <input type="checkbox" name="exit_node_lan" id="rn-elan" class="form-check-input" role="switch">
-                                        <label for="rn-elan" class="form-check-label adv-flag">--exit-node-allow-lan-access</label>
+                                        <label for="rn-elan" class="form-check-label adv-flag">--exit-node-allow-lan-access
+                                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--exit-node-allow-lan-access" data-bs-content="When using an exit node, still allow direct access to your local LAN. Without this, all traffic (including local printers, NAS, etc.) goes through the exit node.">i</a>
+                                        </label>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label adv-flag">--advertise-routes <span class="adv-hint">(CIDRs, comma-sep)</span></label>
+                                    <label class="form-label adv-flag">--advertise-routes <span class="adv-hint">(CIDRs, comma-sep)</span>
+                                        <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--advertise-routes" data-bs-content="Subnet CIDRs this node will route traffic to (subnet router mode). The admin must approve each route in Headscale before peers actually use it. Comma-separated.">i</a>
+                                    </label>
                                     <input type="text" name="advertise_routes" class="form-control form-control-sm" placeholder="10.0.0.0/24, 192.168.1.0/24">
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label adv-flag">--exit-node <span class="adv-hint">(IP or hostname)</span></label>
+                                    <label class="form-label adv-flag">--exit-node <span class="adv-hint">(IP or hostname)</span>
+                                        <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--exit-node" data-bs-content="Use this peer as the exit node for all internet traffic. Specify by Tailscale IP or hostname. The peer must have --advertise-exit-node set and approval.">i</a>
+                                    </label>
                                     <input type="text" name="exit_node" class="form-control form-control-sm" placeholder="100.64.0.1">
                                 </div>
                             </div>
@@ -99,23 +125,31 @@
                                 <div class="col-sm-4 col-md-3 d-flex align-items-end pb-1">
                                     <div class="form-check form-switch">
                                         <input type="checkbox" name="reset" id="rn-reset" class="form-check-input" role="switch">
-                                        <label for="rn-reset" class="form-check-label adv-flag">--reset</label>
+                                        <label for="rn-reset" class="form-check-label adv-flag">--reset
+                                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--reset" data-bs-content="Reset all preferences to defaults before applying these flags. Equivalent to a fresh `tailscale up`. Use when reconfiguring a node from scratch.">i</a>
+                                        </label>
                                     </div>
                                 </div>
                                 <div class="col-sm-4 col-md-3 d-flex align-items-end pb-1">
                                     <div class="form-check form-switch">
                                         <input type="checkbox" name="force_reauth" id="rn-fr" class="form-check-input" role="switch">
-                                        <label for="rn-fr" class="form-check-label adv-flag">--force-reauth</label>
+                                        <label for="rn-fr" class="form-check-label adv-flag">--force-reauth
+                                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--force-reauth" data-bs-content="Force re-authentication even if the node is already logged in. Useful when changing identity or rotating keys.">i</a>
+                                        </label>
                                     </div>
                                 </div>
                                 <div class="col-sm-4 col-md-3 d-flex align-items-end pb-1">
                                     <div class="form-check form-switch">
                                         <input type="checkbox" name="unattended" id="rn-un" class="form-check-input" role="switch">
-                                        <label for="rn-un" class="form-check-label adv-flag">--unattended</label>
+                                        <label for="rn-un" class="form-check-label adv-flag">--unattended
+                                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--unattended" data-bs-content="Don't require an interactive login URL. Required for headless servers — the auth key handles auth without prompting.">i</a>
+                                        </label>
                                     </div>
                                 </div>
                                 <div class="col-sm-4 col-md-3">
-                                    <label class="form-label adv-flag">--timeout</label>
+                                    <label class="form-label adv-flag">--timeout
+                                        <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--timeout" data-bs-content="Maximum wait for the connection to come up (e.g. 30s, 5m). Useful for unattended boots — fail fast instead of hanging.">i</a>
+                                    </label>
                                     <input type="text" name="timeout" class="form-control form-control-sm" placeholder="30s">
                                 </div>
                             </div>
@@ -127,21 +161,29 @@
                                 <div class="col-sm-4 col-md-3 d-flex align-items-end pb-1">
                                     <div class="form-check form-switch">
                                         <input type="checkbox" name="shields_up" id="rn-su" class="form-check-input" role="switch">
-                                        <label for="rn-su" class="form-check-label adv-flag">--shields-up</label>
+                                        <label for="rn-su" class="form-check-label adv-flag">--shields-up
+                                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--shields-up" data-bs-content="Block all incoming connections to this node. Outgoing still works. A personal-firewall mode — useful for laptops on untrusted networks.">i</a>
+                                        </label>
                                     </div>
                                 </div>
                                 <div class="col-sm-4 col-md-3 d-flex align-items-end pb-1">
                                     <div class="form-check form-switch">
                                         <input type="checkbox" name="ssh" id="rn-ssh" class="form-check-input" role="switch">
-                                        <label for="rn-ssh" class="form-check-label adv-flag">--ssh</label>
+                                        <label for="rn-ssh" class="form-check-label adv-flag">--ssh
+                                            <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--ssh" data-bs-content="Enable Tailscale SSH server on this node. Lets users SSH in with their Tailscale identity instead of SSH keys. Governed by `ssh` rules in your ACL.">i</a>
+                                        </label>
                                     </div>
                                 </div>
                                 <div class="col-sm-6 col-md-3">
-                                    <label class="form-label adv-flag">--operator <span class="adv-hint">(unprivileged user)</span></label>
+                                    <label class="form-label adv-flag">--operator <span class="adv-hint">(unprivileged user)</span>
+                                        <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--operator" data-bs-content="Allow this unprivileged Linux user to run `tailscale` commands without sudo. Useful for operators who shouldn't have root.">i</a>
+                                    </label>
                                     <input type="text" name="operator" class="form-control form-control-sm" placeholder="alice">
                                 </div>
                                 <div class="col-sm-6 col-md-3">
-                                    <label class="form-label adv-flag">--nickname</label>
+                                    <label class="form-label adv-flag">--nickname
+                                        <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--nickname" data-bs-content="Friendly device name shown in the admin UI, separate from the OS hostname. Newer Tailscale clients only.">i</a>
+                                    </label>
                                     <input type="text" name="nickname" class="form-control form-control-sm" placeholder="alice's mac">
                                 </div>
                             </div>
@@ -151,25 +193,33 @@
                             <div class="adv-section-title">Linux / subnet router</div>
                             <div class="row g-3">
                                 <div class="col-sm-6 col-md-3">
-                                    <label class="form-label adv-flag">--netfilter-mode</label>
+                                    <label class="form-label adv-flag">--netfilter-mode
+                                        <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--netfilter-mode" data-bs-content="How Tailscale interacts with iptables/nftables. `on` (default): Tailscale manages rules. `nodivert`: don't divert subnet routes. `off`: don't touch netfilter. Linux only.">i</a>
+                                    </label>
                                     <select name="netfilter_mode" class="form-select form-select-sm">
                                         <option value="">default</option><option value="on">on</option><option value="nodivert">nodivert</option><option value="off">off</option>
                                     </select>
                                 </div>
                                 <div class="col-sm-6 col-md-3">
-                                    <label class="form-label adv-flag">--snat-subnet-routes</label>
+                                    <label class="form-label adv-flag">--snat-subnet-routes
+                                        <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--snat-subnet-routes" data-bs-content="When advertising subnet routes, source-NAT traffic so it appears to come from this node. Default: yes. Set no when the subnet's hosts can route back to Tailscale IPs directly.">i</a>
+                                    </label>
                                     <select name="snat_subnet_routes" class="form-select form-select-sm">
                                         <option value="">default (yes)</option><option value="true">yes</option><option value="false">no</option>
                                     </select>
                                 </div>
                                 <div class="col-sm-6 col-md-3">
-                                    <label class="form-label adv-flag">--stateful-filtering</label>
+                                    <label class="form-label adv-flag">--stateful-filtering
+                                        <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--stateful-filtering" data-bs-content="Stateful firewall when forwarding subnet routes — drops inbound traffic that's not a reply to an outbound flow. Linux only.">i</a>
+                                    </label>
                                     <select name="stateful_filtering" class="form-select form-select-sm">
                                         <option value="">default</option><option value="true">yes</option><option value="false">no</option>
                                     </select>
                                 </div>
                                 <div class="col-sm-6 col-md-3">
-                                    <label class="form-label adv-flag">--accept-risk</label>
+                                    <label class="form-label adv-flag">--accept-risk
+                                        <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="--accept-risk" data-bs-content="Acknowledge a risk to proceed without prompting. `lose-ssh` lets `tailscale up` proceed even if it might disrupt your active SSH session. `all` accepts every risk Tailscale would warn about.">i</a>
+                                    </label>
                                     <select name="accept_risk" class="form-select form-select-sm">
                                         <option value="">none</option><option value="lose-ssh">lose-ssh</option><option value="all">all</option>
                                     </select>
@@ -255,6 +305,16 @@
         });
     });
     tagInput?.addEventListener('input', refreshChipState);
+
+    // Initialize Bootstrap popovers (the "i" info icons next to each flag)
+    // when the modal is shown — Tabler's bundle exposes window.bootstrap.
+    const modalEl = document.getElementById('register-node');
+    modalEl?.addEventListener('shown.bs.modal', () => {
+        if (!window.bootstrap) return;
+        modalEl.querySelectorAll('[data-bs-toggle="popover"]').forEach(el => {
+            if (!bootstrap.Popover.getInstance(el)) new bootstrap.Popover(el);
+        });
+    });
 
     // Expiration presets: relative offsets from "now", written as
     // datetime-local ("YYYY-MM-DDTHH:MM" in the user's local tz).
