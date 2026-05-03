@@ -255,6 +255,17 @@ func (h *Handler) FinishRegister(w http.ResponseWriter, r *http.Request, userID 
 	}
 	cred, err := wa.CreateCredential(user, ps.session, parsed)
 	if err != nil {
+		expected, _ := rpFromRequest(r)
+		var rpOrigins []string
+		if expected != nil {
+			rpOrigins = expected.Config.RPOrigins
+		}
+		h.log.Warn("webauthn register verify failed",
+			"err", err,
+			"expected_rpid_and_origins", rpOrigins,
+			"client_data_origin", parsed.Response.CollectedClientData.Origin,
+			"x_forwarded_proto", r.Header.Get("X-Forwarded-Proto"),
+			"host", r.Host)
 		writeErr(w, 400, "verify: "+err.Error())
 		return
 	}
