@@ -287,7 +287,11 @@ func (c *Client) userIDByName(ctx context.Context, name string) (uint64, error) 
 }
 
 func (c *Client) ExpirePreAuthKey(ctx context.Context, user, key string) error {
-	body := map[string]any{"user": user, "key": key}
+	uid, err := c.userIDByName(ctx, user)
+	if err != nil {
+		return err
+	}
+	body := map[string]any{"user": uid, "key": key}
 	return c.request(ctx, http.MethodPost, "/api/v1/preauthkey/expire", body, nil)
 }
 
