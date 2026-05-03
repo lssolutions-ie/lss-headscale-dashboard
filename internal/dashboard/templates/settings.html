@@ -133,7 +133,14 @@
 </div>
 
 <script>
-document.getElementById('register-passkey-btn')?.addEventListener('click', async () => {
+const regBtn = document.getElementById('register-passkey-btn');
+const regStatus = document.getElementById('passkey-status');
+if (regBtn && (!navigator.credentials || !window.isSecureContext)) {
+    regBtn.disabled = true;
+    regBtn.textContent = 'Passkeys need HTTPS or http://localhost';
+    regStatus.textContent = 'WebAuthn is disabled here because this page isn\'t a secure context. Reach the dashboard via HTTPS (HAProxy in front) or via http://localhost (SSH tunnel: ssh -L 9000:127.0.0.1:9000 user@host) and reload this page.';
+}
+regBtn?.addEventListener('click', async () => {
     const status = document.getElementById('passkey-status');
     status.textContent = 'Starting registration…';
     try {

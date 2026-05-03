@@ -58,6 +58,13 @@
         return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
     }
 
+    if (!navigator.credentials || !window.isSecureContext) {
+        btn.disabled = true;
+        btn.textContent = 'Passkey sign-in needs HTTPS or http://localhost';
+        msg.textContent = 'WebAuthn is disabled in non-secure contexts. Reach the dashboard over HTTPS (HAProxy with TLS in front) or use an SSH tunnel and visit http://localhost:9000.';
+        msg.style.display = '';
+        return;
+    }
     btn.addEventListener('click', async () => {
         msg.style.display = 'none';
         btn.disabled = true;
