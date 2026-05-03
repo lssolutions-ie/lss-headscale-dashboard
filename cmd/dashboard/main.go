@@ -165,6 +165,32 @@ func main() {
 
 	loginH.Routes(mux)
 
+	// Passkey-based login (public — no session yet).
+	mux.HandleFunc("POST /login/passkey/begin", pkH.BeginLogin)
+	mux.HandleFunc("POST /login/passkey/finish", func(w http.ResponseWriter, r *http.Request) {
+		userID, err := pkH.FinishLogin(r)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		ip := r.RemoteAddr
+		if x := r.Header.Get("X-Forwarded-For"); x != "" {
+			ip = x
+		}
+		s, err := auth.CreateSession(d, userID, ip, r.UserAgent())
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		auth.SetSessionCookie(w, r, s.ID)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "redirect": "/"})
+	})
+
 	// Authenticated dashboard routes — wrapped in RequireAuth.
 	authMW := auth.RequireAuth(d)
 	dashMux := http.NewServeMux()

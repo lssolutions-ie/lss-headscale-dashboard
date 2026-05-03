@@ -28,8 +28,72 @@
                         <button type="submit" class="btn btn-primary w-100">Sign in</button>
                     </div>
                 </form>
+
+                <div class="hr-text mt-3 mb-3">or</div>
+                <button type="button" id="passkey-btn" class="btn btn-outline-primary w-100">
+                    Sign in with passkey
+                    <small class="text-muted ms-1 d-block d-sm-inline">Yubikey · Bitwarden · Touch ID · Passkey</small>
+                </button>
+                <small class="form-hint mt-2 d-block">Requires the dashboard to be reached over HTTPS (not plain HTTP). Loopback (<code>localhost</code>) also works.</small>
+                <div id="passkey-msg" class="alert alert-danger mt-3" style="display:none"></div>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+(function () {
+    const btn = document.getElementById('passkey-btn');
+    const msg = document.getElementById('passkey-msg');
+    if (!btn) return;
+
+    function b64uToBuf(s) {
+        s = s.replace(/-/g,'+').replace(/_/g,'/'); while (s.length%4) s += '=';
+        const bin = atob(s); const buf = new Uint8Array(bin.length);
+        for (let i=0; i<bin.length; i++) buf[i] = bin.charCodeAt(i);
+        return buf.buffer;
+    }
+    function bufToB64u(buf) {
+        const bin = String.fromCharCode(...new Uint8Array(buf));
+        return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    }
+
+    btn.addEventListener('click', async () => {
+        msg.style.display = 'none';
+        btn.disabled = true;
+        try {
+            const begin = await fetch('/login/passkey/begin', { method: 'POST' });
+            if (!begin.ok) throw new Error('begin: ' + begin.status);
+            const opts = await begin.json();
+            opts.publicKey.challenge = b64uToBuf(opts.publicKey.challenge);
+            (opts.publicKey.allowCredentials || []).forEach(c => c.id = b64uToBuf(c.id));
+
+            const cred = await navigator.credentials.get({ publicKey: opts.publicKey });
+            const body = {
+                id: cred.id,
+                rawId: bufToB64u(cred.rawId),
+                type: cred.type,
+                response: {
+                    clientDataJSON: bufToB64u(cred.response.clientDataJSON),
+                    authenticatorData: bufToB64u(cred.response.authenticatorData),
+                    signature: bufToB64u(cred.response.signature),
+                    userHandle: cred.response.userHandle ? bufToB64u(cred.response.userHandle) : null,
+                },
+            };
+            const finish = await fetch('/login/passkey/finish', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await finish.json();
+            if (!finish.ok || !data.ok) throw new Error(data.error || ('HTTP ' + finish.status));
+            location.href = data.redirect || '/';
+        } catch (e) {
+            msg.textContent = 'Passkey sign-in failed: ' + e.message;
+            msg.style.display = '';
+            btn.disabled = false;
+        }
+    });
+})();
+</script>
 {{end}}

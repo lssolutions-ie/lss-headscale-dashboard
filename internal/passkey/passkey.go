@@ -9,6 +9,7 @@
 package passkey
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,10 +27,11 @@ import (
 )
 
 type Handler struct {
-	db        *sql.DB
-	log       *slog.Logger
-	pending   map[int64]*pendingSession
-	pendingMu sync.Mutex
+	db           *sql.DB
+	log          *slog.Logger
+	pending      map[int64]*pendingSession  // registration sessions, keyed by user id
+	pendingLogin map[string]*pendingSession // login sessions, keyed by random token
+	pendingMu    sync.Mutex
 }
 
 type pendingSession struct {
@@ -37,8 +40,21 @@ type pendingSession struct {
 }
 
 func New(d *sql.DB, log *slog.Logger) *Handler {
-	return &Handler{db: d, log: log, pending: map[int64]*pendingSession{}}
+	return &Handler{
+		db:           d,
+		log:          log,
+		pending:      map[int64]*pendingSession{},
+		pendingLogin: map[string]*pendingSession{},
+	}
 }
+
+func newToken() string {
+	b := make([]byte, 24)
+	_, _ = rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+const loginCookie = "lss_pk_login"
 
 // rpFromRequest returns the WebAuthn config derived from the request's
 // host (so the same binary works regardless of hostname).
@@ -100,6 +116,11 @@ func loadUser(d *sql.DB, userID int64) (*userAdapter, error) {
 }
 
 // BeginRegister returns the PublicKeyCredentialCreationOptions for a new credential.
+//
+// Requests a resident (discoverable) credential so Bitwarden, Yubikey, passkey
+// providers etc. can list this dashboard at sign-in time without needing the
+// username typed first. UserVerification is preferred but not required so
+// hardware keys without PINs still work.
 func (h *Handler) BeginRegister(w http.ResponseWriter, r *http.Request, userID int64) {
 	wa, err := rpFromRequest(r)
 	if err != nil {
@@ -111,7 +132,12 @@ func (h *Handler) BeginRegister(w http.ResponseWriter, r *http.Request, userID i
 		writeErr(w, 500, "load user: "+err.Error())
 		return
 	}
-	options, session, err := wa.BeginRegistration(user)
+	options, session, err := wa.BeginRegistration(user,
+		webauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{
+			ResidentKey:      protocol.ResidentKeyRequirementRequired,
+			UserVerification: protocol.VerificationPreferred,
+		}),
+	)
 	if err != nil {
 		writeErr(w, 500, "begin: "+err.Error())
 		return
@@ -121,6 +147,85 @@ func (h *Handler) BeginRegister(w http.ResponseWriter, r *http.Request, userID i
 	h.pendingMu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(options)
+}
+
+// BeginLogin starts a passwordless WebAuthn assertion. The browser shows the
+// user every passkey it has for this site; no username required.
+func (h *Handler) BeginLogin(w http.ResponseWriter, r *http.Request) {
+	wa, err := rpFromRequest(r)
+	if err != nil {
+		writeErr(w, 500, "rp config: "+err.Error())
+		return
+	}
+	options, session, err := wa.BeginDiscoverableLogin()
+	if err != nil {
+		writeErr(w, 500, "begin login: "+err.Error())
+		return
+	}
+	tok := newToken()
+	h.pendingMu.Lock()
+	h.pendingLogin[tok] = &pendingSession{session: *session, createdAt: time.Now()}
+	h.pendingMu.Unlock()
+	http.SetCookie(w, &http.Cookie{
+		Name:     loginCookie,
+		Value:    tok,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   600,
+		Secure:   r.Header.Get("X-Forwarded-Proto") == "https",
+	})
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(options)
+}
+
+// FinishLogin verifies the assertion and returns the user_id of the user the
+// matching credential belongs to. Caller is responsible for creating the
+// auth session cookie.
+func (h *Handler) FinishLogin(r *http.Request) (int64, error) {
+	wa, err := rpFromRequest(r)
+	if err != nil {
+		return 0, fmt.Errorf("rp config: %w", err)
+	}
+	c, err := r.Cookie(loginCookie)
+	if err != nil {
+		return 0, errors.New("no pending login (cookie missing)")
+	}
+	h.pendingMu.Lock()
+	ps := h.pendingLogin[c.Value]
+	delete(h.pendingLogin, c.Value)
+	h.pendingMu.Unlock()
+	if ps == nil || time.Since(ps.createdAt) > 5*time.Minute {
+		return 0, errors.New("no pending login (expired)")
+	}
+	// The browser returns userHandle (= what we set as WebAuthnID() during
+	// register, which is the user.id formatted as ASCII decimal). Use that to
+	// look up the user.
+	handler := func(rawID, userHandle []byte) (webauthn.User, error) {
+		uid, err := strconv.ParseInt(string(userHandle), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("bad user handle %q", string(userHandle))
+		}
+		return loadUser(h.db, uid)
+	}
+	cred, err := wa.FinishDiscoverableLogin(handler, ps.session, r)
+	if err != nil {
+		return 0, fmt.Errorf("verify: %w", err)
+	}
+	// Update sign_count + last_used_at for replay protection / audit.
+	var userID int64
+	err = h.db.QueryRow(
+		`SELECT user_id FROM webauthn_credentials WHERE credential_id = ?`,
+		cred.ID,
+	).Scan(&userID)
+	if err != nil {
+		return 0, fmt.Errorf("look up credential: %w", err)
+	}
+	_, _ = h.db.Exec(
+		`UPDATE webauthn_credentials SET sign_count = ?, last_used_at = CURRENT_TIMESTAMP WHERE credential_id = ?`,
+		cred.Authenticator.SignCount, cred.ID,
+	)
+	return userID, nil
 }
 
 // FinishRegister verifies the attestation and stores the new credential.

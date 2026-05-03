@@ -109,8 +109,8 @@
         <div class="card" id="passkeys">
             <div class="card-header"><h3 class="card-title">Security keys (Yubikey / Passkeys)</h3></div>
             <div class="card-body">
-                <p class="text-muted">Register a FIDO2 security key (Yubikey, passkey, Touch ID) as an alternative to TOTP.
-                <strong>Requires HTTPS.</strong> Place the dashboard behind HAProxy/nginx with TLS to use this.</p>
+                <p class="text-muted">Register a FIDO2 / WebAuthn passkey (Yubikey, Bitwarden, 1Password, Touch ID, Windows Hello, etc.) as a sign-in method. Once registered, the "Sign in with passkey" button on the login page works for this user.
+                <strong>Requires HTTPS</strong> in browsers — place the dashboard behind HAProxy/nginx with TLS.</p>
                 <ul class="list-group">
                     {{range .Passkeys}}
                     <li class="list-group-item d-flex justify-content-between align-items-center">
