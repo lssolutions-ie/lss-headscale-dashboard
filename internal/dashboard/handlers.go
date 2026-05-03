@@ -967,22 +967,25 @@ func (h *Handler) preAuthKeysExpire(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "csrf", http.StatusForbidden)
 		return
 	}
-	c, errStr := h.headscaleClient(r.Context())
-	if c == nil {
-		setFlash(w, "danger", errStr)
+	hdb, _ := settings.GetHeadscaleDB(h.db)
+	if !hdb.Enabled || hdb.Path == "" {
+		setFlash(w, "danger", "Local Headscale DB is not enabled. Required: the API expire endpoint silently no-ops on prefix-based keys (Headscale 0.28+).")
 		http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
 		return
 	}
-	user := r.FormValue("user")
-	key := r.FormValue("key")
-	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
-	defer cancel()
-	if err := c.ExpirePreAuthKey(ctx, user, key); err != nil {
-		setFlash(w, "danger", "Expire failed: "+err.Error())
-	} else {
-		audit.Write(h.db, actorID(r), currentIP(r), audit.ActionPreAuthKeyExpire, user, nil)
-		setFlash(w, "success", "Pre-auth key expired.")
+	id, err := strconv.ParseInt(r.FormValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		setFlash(w, "danger", "Bad pre-auth key id.")
+		http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
+		return
 	}
+	if err := headscaledb.New(hdb).ExpirePreAuthKeyByID(id); err != nil {
+		setFlash(w, "danger", "Expire failed: "+err.Error())
+		http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
+		return
+	}
+	audit.Write(h.db, actorID(r), currentIP(r), audit.ActionPreAuthKeyExpire, fmt.Sprintf("%d", id), nil)
+	setFlash(w, "success", "Pre-auth key expired.")
 	http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
 }
 

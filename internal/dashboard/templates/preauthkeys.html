@@ -50,8 +50,7 @@
                         {{if and (not .Used) (not .IsExpired)}}
                         <form method="post" action="/preauthkeys/expire" class="m-0" onsubmit="return confirm('Expire this key?');">
                             <input type="hidden" name="csrf" value="{{$.CSRF}}">
-                            <input type="hidden" name="user" value="{{.User.Name}}">
-                            <input type="hidden" name="key" value="{{.Key}}">
+                            <input type="hidden" name="id" value="{{.ID}}">
                             <button class="btn btn-sm btn-outline-warning">Expire</button>
                         </form>
                         {{else}}

@@ -301,6 +301,36 @@ func jsonMarshalTags(v []string) (string, error) {
 }
 func jsonUnmarshalTags(s string, v *[]string) error { return jsonUnmarshal([]byte(s), v) }
 
+// ExpirePreAuthKeyByID sets the expiration on a pre-auth key to "now - 1s" so
+// Headscale immediately treats it as expired.
+//
+// Why direct DB and not the HTTP API? Headscale 0.28 stores only `prefix +
+// hash` for newer keys (the original full key value is never persisted), and
+// its /api/v1/preauthkey/expire endpoint matches by full key. The full value
+// is gone after the create response, so the API path silently no-ops.
+func (c *Client) ExpirePreAuthKeyByID(id int64) error {
+	if id <= 0 {
+		return fmt.Errorf("bad id: %d", id)
+	}
+	d, err := c.open()
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	res, err := d.Exec(
+		"UPDATE pre_auth_keys SET expiration = datetime('now', '-1 second') WHERE id = ?",
+		id,
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("no pre-auth key with id=%d", id)
+	}
+	return nil
+}
+
 // DeletePreAuthKey removes a pre-auth key row from Headscale's pre_auth_keys
 // table by id. Headscale's HTTP API only exposes "expire", not delete, so
 // this is the only way to actually remove the row.
