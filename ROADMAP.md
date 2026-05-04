@@ -1,58 +1,54 @@
 # Roadmap
 
-Current release: **v1.5.4**.
+Current release: **v1.9.0** — feature-complete for daily-driver use.
 
-## Shipped (v1.0 → v1.5)
+## Shipped (v1.0 → v1.9)
 
-- First-run wizard step 1 (admin + TOTP + recovery codes)
-- Login + sessions + rate-limit + lockout + CSRF + audit log
+- First-run wizard, all three steps: admin + TOTP, SMTP, Headscale connection
+- Login + sessions + rate-limit + lockout + CSRF + audit log (with JSON export)
 - Headscale REST client: Users, Nodes, PreAuthKeys, Policy
-- Edit Node modal — every column of the `nodes` row editable, organized into
-  Identity / Network / Tags & routes / User & auth / Crypto keys (collapsed) /
-  Timestamps / host_info
+- Edit Node modal — every column editable, with explicit safe / danger split
 - Direct SQLite editor (`internal/headscaledb`) with column whitelist + sudoers
   + ACL setup + ReadWritePaths drop-in handled by `install.sh`
 - Wait/spinner page that polls `/headscale/ready` after a Headscale restart
-- ACL Policy page — Builder (chip-based selectors built from existing groups /
-  tags / users / hosts / `*`), Structured view, Raw HuJSON editor with
-  edits-preserving error handling
-- Pre-auth keys: tristate state column (active / expired / used), search +
-  state + user filters, ACL-tag input on key creation
-- Register Node modal — generates a `tailscale up` command with full flag
-  coverage (Network / Auth & state / Access / Linux subnet-router), tag chips
-  pulled from `tagOwners`, datetime picker for key expiration with
-  +1h/+24h/+7d/+30d/Never presets
-- Settings: Headscale connection (incl. ClientURL for the public Tailscale
-  URL), Local Headscale DB, SMTP, change password, passkey management
-- WebAuthn (passkey) **registration** — login-via-passkey is below
-- Tabler.io theme, search box on every table, compact rows, dropdown escape
-  via `.allow-overflow` + `data-bs-strategy="fixed"`
-- Install: turnkey curl|sh, idempotent re-runs, fail2ban filter, GoReleaser
-  linux/amd64+arm64, automatic upgrade flow
+- ACL Policy page — Builder (chip selectors), Structured view, Raw HuJSON
+- Tags page — rename / delete with policy + DB propagation across nodes & keys
+- Routes page (read-only aggregation)
+- Pre-auth keys: tristate state column, search + filters, expire via direct DB
+  (API silently no-ops on prefix-only keys)
+- Register Node modal — `tailscale up` command builder with full flag coverage,
+  ACL-tag chips from `tagOwners`, datetime picker for key expiration
+- Settings: Headscale connection (incl. ClientURL), Local Headscale DB, SMTP,
+  change password, passkey management
+- WebAuthn registration **and** sign-in (Bitwarden, Yubikey, Touch ID, etc.) —
+  `BackupEligible`/`BackupState` persisted; in-memory pending sessions swept
+- Password reset via SMTP — token-based, 1h TTL, invalidates all sessions
+- Tabler.io theme **vendored** (`internal/web/static/`) — works without internet
+- HAProxy/loopback-aware: trusts X-Forwarded-Proto/-For; cookies flip Secure
+  when proxied via HTTPS; WebAuthn RP origin defaults to https for non-loopback
+- fail2ban filter shipped, journald-driven; logs match the filter regex
+- systemd unit, install.sh (turnkey on Ubuntu), GoReleaser linux/amd64+arm64
+- v1.8 audit pass: setup wizard guard, open-redirect fix, CSRF helpers
+  consolidated in `auth/`, audit-write errors surface, persisted setup HMAC key
 
-## Up next
+## Deferred to v1.10+
 
-- [ ] **Wizard step 2 + 3** — currently both happen post-login from `/settings`.
-      Consider folding them into the wizard so a fresh install lands on a
-      configured dashboard immediately.
-- [ ] **WebAuthn login flow** — registration works; let users sign in with a
-      registered passkey instead of TOTP.
-- [ ] **Password reset via SMTP** — depends on SMTP being configured.
-- [ ] **Track which auth_key_id registered which node** so a future "Register
-      Node" can apply a desired post-registration ID/name automatically once
-      the node connects.
-- [ ] **Routes / DNS view** — Headscale exposes both via API; dashboard could
-      surface them similarly to Nodes.
-- [ ] **Per-user API tokens** for read-only programmatic access.
-- [ ] **Force re-login after password change.**
+These are real-but-not-blocking; defer reasons in parens.
 
-## Observability / hardening
-
-- [ ] Move HTMX + Tabler from CDN to vendored static (so the dashboard works
-      on hosts without internet egress).
-- [ ] Audit log export (syslog / JSON file / webhook).
-- [ ] Multi-admin roles (read-only operator vs full admin).
-- [ ] Backup/restore for dashboard state.
+- [ ] **Routes page approve/disable controls** (today route changes go through
+  the Edit Node modal's `approved_routes` field; a per-row Approve / Disable
+  control + bulk approve would be nice)
+- [ ] **DNS settings page** (Headscale's DNS is config-file-driven, no API
+  surface — would need a separate config-editing flow)
+- [ ] **Per-user API tokens** for read-only programmatic access (no use case
+  yet on a single-admin install)
+- [ ] **Multi-admin roles** (read-only operator vs full admin) — same
+- [ ] **OIDC SSO** (likely shared with Headscale's IdP)
+- [ ] **Audit log syslog / webhook export** (JSON download exists; a streaming
+  export to syslog or webhook would help long-term retention)
+- [ ] **Backup/restore for dashboard state** (we proved the manual procedure
+  in the v1.9 audit; a UI button would make it routine)
+- [ ] **Dark mode**
 
 ## Explicit non-goals
 
