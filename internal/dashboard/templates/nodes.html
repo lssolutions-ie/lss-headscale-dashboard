@@ -450,22 +450,30 @@
                         <textarea name="approved_routes" class="form-control font-monospace" rows="2" spellcheck="false">{{index $db "approved_routes"}}</textarea></div>
                 </div>
 
-                <!-- User & auth -->
+                <!-- Auth -->
                 <div class="row g-3 mt-1">
-                    <div class="col-md-4"><label class="form-label">user_id</label>
-                        <input type="number" name="user_id" class="form-control" value="{{index $db "user_id"}}"></div>
-                    <div class="col-md-4"><label class="form-label">register_method</label>
+                    <div class="col-md-6"><label class="form-label">register_method</label>
                         <input type="text" name="register_method" class="form-control" value="{{index $db "register_method"}}"></div>
-                    <div class="col-md-4"><label class="form-label">auth_key_id</label>
+                    <div class="col-md-6"><label class="form-label">auth_key_id</label>
                         <input type="text" name="auth_key_id" class="form-control" value="{{index $db "auth_key_id"}}"></div>
                 </div>
 
-                <!-- Crypto keys (collapsed) -->
-                <div class="mt-3">
-                    <a class="text-decoration-none" data-bs-toggle="collapse" href="#keys-{{.ID}}">▸ Crypto keys (machine_key / node_key / disco_key) — danger</a>
+                <!-- Crypto keys (collapsed, danger-gated) -->
+                <div class="mt-3 alert alert-warning d-flex align-items-center gap-2 py-2">
+                    <input type="checkbox" name="enable_danger" id="danger-{{.ID}}" class="form-check-input m-0">
+                    <label for="danger-{{.ID}}" class="form-check-label small mb-0">
+                        <strong>Enable dangerous edits.</strong>
+                        Required to write <code>machine_key</code>, <code>node_key</code>, <code>disco_key</code>, or <code>user_id</code>.
+                        Wrong values here will brick this node's WireGuard authentication.
+                    </label>
+                </div>
+                <div class="mt-2">
+                    <a class="text-decoration-none" data-bs-toggle="collapse" href="#keys-{{.ID}}">▸ Crypto keys & user_id (danger)</a>
                 </div>
                 <div class="collapse" id="keys-{{.ID}}">
                     <div class="row g-2 mt-1">
+                        <div class="col-md-6"><label class="form-label">user_id</label>
+                            <input type="number" name="user_id" class="form-control font-monospace" value="{{index $db "user_id"}}"></div>
                         <div class="col-12"><label class="form-label">machine_key</label>
                             <input type="text" name="machine_key" class="form-control font-monospace" value="{{index $db "machine_key"}}" spellcheck="false"></div>
                         <div class="col-12"><label class="form-label">node_key</label>

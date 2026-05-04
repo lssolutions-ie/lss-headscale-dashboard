@@ -91,6 +91,8 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /preauthkeys/create", h.preAuthKeysCreate)
 	mux.HandleFunc("POST /preauthkeys/expire", h.preAuthKeysExpire)
 	mux.HandleFunc("GET /audit", h.auditPage)
+	mux.HandleFunc("GET /audit/export.json", h.auditExportJSON)
+	mux.HandleFunc("GET /routes", h.routes)
 	h.RegisterTagRoutes(mux)
 	h.RegisterPolicyRoutes(mux)
 	mux.HandleFunc("GET /settings", h.settings)
@@ -618,18 +620,23 @@ func (h *Handler) nodesEdit(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		currentRow := dbNodes[id]
+		dangerOK := r.FormValue("enable_danger") == "on"
 		dbFields := map[string]string{}
+		var rejectedDanger []string
 		for _, col := range headscaledb.AllowedColumns {
 			formName := col
 			if col == "id" {
 				formName = "new_id" // routing field is `id`; new value lives in `new_id`
 			}
 			submitted := r.FormValue(formName)
-			// If the form didn't carry this column at all, leave it alone.
 			if _, present := r.PostForm[formName]; !present {
 				continue
 			}
 			if submitted == currentRow[col] {
+				continue
+			}
+			if headscaledb.IsDangerColumn(col) && !dangerOK {
+				rejectedDanger = append(rejectedDanger, col)
 				continue
 			}
 			if col == "id" {
@@ -640,6 +647,9 @@ func (h *Handler) nodesEdit(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			dbFields[col] = submitted
+		}
+		if len(rejectedDanger) > 0 {
+			changes = append(changes, "skipped (danger gate off): "+strings.Join(rejectedDanger, ","))
 		}
 		if len(dbFields) > 0 {
 			n, err := hdbClient.UpdateNodeFields(id, dbFields)
@@ -956,6 +966,59 @@ func (h *Handler) preAuthKeysExpire(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/preauthkeys", http.StatusSeeOther)
 }
 
+// routes aggregates approved + advertised routes across all nodes.
+// Read-only for now; the Edit Node modal can write `approved_routes` directly.
+func (h *Handler) routes(w http.ResponseWriter, r *http.Request) {
+	bp := h.loadBase(w, r, "routes")
+	type row struct {
+		NodeID, NodeName, UserName, CIDR string
+		Approved, Available              bool
+	}
+	type pageData struct {
+		basePage
+		Rows []row
+	}
+	pd := pageData{basePage: bp}
+	c, errStr := h.headscaleClient(r.Context())
+	if c == nil {
+		pd.HeadscaleError = errStr
+		h.render(w, "routes.html", pd)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+	defer cancel()
+	nodes, err := c.ListNodes(ctx, "")
+	if err != nil {
+		pd.HeadscaleError = err.Error()
+		h.render(w, "routes.html", pd)
+		return
+	}
+	for _, n := range nodes {
+		seen := map[string]*row{}
+		for _, cidr := range n.AvailableRoutes {
+			seen[cidr] = &row{NodeID: n.ID, NodeName: n.GivenName, UserName: n.User.Name, CIDR: cidr, Available: true}
+		}
+		for _, cidr := range n.ApprovedRoutes {
+			rr, ok := seen[cidr]
+			if !ok {
+				rr = &row{NodeID: n.ID, NodeName: n.GivenName, UserName: n.User.Name, CIDR: cidr}
+				seen[cidr] = rr
+			}
+			rr.Approved = true
+		}
+		for _, rr := range seen {
+			pd.Rows = append(pd.Rows, *rr)
+		}
+	}
+	sort.Slice(pd.Rows, func(i, j int) bool {
+		if pd.Rows[i].NodeName != pd.Rows[j].NodeName {
+			return pd.Rows[i].NodeName < pd.Rows[j].NodeName
+		}
+		return pd.Rows[i].CIDR < pd.Rows[j].CIDR
+	})
+	h.render(w, "routes.html", pd)
+}
+
 func (h *Handler) auditPage(w http.ResponseWriter, r *http.Request) {
 	bp := h.loadBase(w, r, "audit")
 	type pageData struct {
@@ -965,6 +1028,23 @@ func (h *Handler) auditPage(w http.ResponseWriter, r *http.Request) {
 	pd := pageData{basePage: bp}
 	pd.Entries, _ = audit.List(h.db, 200, 0)
 	h.render(w, "audit.html", pd)
+}
+
+// auditExportJSON streams every audit log row as a JSON array. Forensics tools
+// can ingest this directly; users can also `curl -O` for an offline copy.
+func (h *Handler) auditExportJSON(w http.ResponseWriter, r *http.Request) {
+	entries, err := audit.List(h.db, 50000, 0)
+	if err != nil {
+		http.Error(w, "list failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="audit-log.json"`)
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(entries); err != nil {
+		h.log.Error("audit export encode", "err", err)
+	}
 }
 
 // ----- Settings -----

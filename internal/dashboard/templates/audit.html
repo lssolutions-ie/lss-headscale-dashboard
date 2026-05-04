@@ -1,6 +1,9 @@
 {{define "title"}}Audit log{{end}}
 {{define "content"}}
-<h2 class="page-title mb-3">Audit log</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="page-title m-0">Audit log</h2>
+    <a href="/audit/export.json" class="btn btn-sm btn-outline-secondary" download>Download JSON</a>
+</div>
 <div class="card">
     <div class="table-search-row">
         <input type="search" class="form-control form-control-sm" placeholder="Search across all columns…" data-search="#audit-table">

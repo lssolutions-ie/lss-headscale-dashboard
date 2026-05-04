@@ -1,0 +1,33 @@
+{{define "title"}}Forgot password{{end}}
+{{define "content"}}
+<div class="page page-center">
+    <div class="container container-tight py-4">
+        <div class="text-center mb-4"><h1 class="navbar-brand navbar-brand-autodark">LSS Headscale Dashboard</h1></div>
+        <div class="card card-md">
+            <div class="card-body">
+                <h2 class="h2 text-center mb-3">Reset your password</h2>
+                {{if .Sent}}
+                <div class="alert alert-success">
+                    If <code>{{.Form.Username}}</code> matches a real account, a one-time reset link has been emailed to the address on file. The link is valid for 1 hour.
+                </div>
+                <div class="text-center"><a href="/login">← Back to sign in</a></div>
+                {{else}}
+                {{if .Error}}<div class="alert alert-danger">{{.Error}}</div>{{end}}
+                <p class="text-muted">Enter your username or email. If we have it on file, we'll email a one-time reset link.</p>
+                <form method="post" action="/forgot">
+                    <input type="hidden" name="csrf" value="{{.CSRF}}">
+                    <div class="mb-3">
+                        <label class="form-label">Username or email</label>
+                        <input type="text" name="username" class="form-control" autocomplete="username" autofocus required value="{{.Form.Username}}">
+                    </div>
+                    <div class="form-footer">
+                        <button type="submit" class="btn btn-primary w-100">Send reset link</button>
+                    </div>
+                </form>
+                <div class="text-center mt-3"><a href="/login">← Back to sign in</a></div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

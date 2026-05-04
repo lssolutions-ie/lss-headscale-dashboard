@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -59,7 +60,11 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /setup", h.guardSetup(h.adminForm))
 	mux.HandleFunc("POST /setup", h.guardSetup(h.createAdmin))
 	mux.HandleFunc("POST /setup/totp", h.guardSetup(h.verifyTOTP))
-	mux.HandleFunc("GET /setup/done", h.guardSetup(h.done))
+	mux.HandleFunc("GET /setup/smtp", h.guardSetup(h.smtpForm))
+	mux.HandleFunc("POST /setup/smtp", h.guardSetup(h.smtpSubmit))
+	mux.HandleFunc("GET /setup/headscale", h.guardSetup(h.headscaleForm))
+	mux.HandleFunc("POST /setup/headscale", h.guardSetup(h.headscaleSubmit))
+	mux.HandleFunc("GET /setup/done", h.done) // reachable AFTER setup_complete is set
 	mux.HandleFunc("POST /setup/test-headscale", h.guardSetup(h.testHeadscale))
 }
 
@@ -269,16 +274,130 @@ func (h *Handler) verifyTOTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if err := db.SetSetting(h.db, settingDone, "true"); err != nil {
-		h.log.Error("mark setup complete", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+	// Don't flip setup_complete yet — there are still SMTP and Headscale steps.
+	// Keep the setup cookie too; harmless and re-issued by step 2 if needed.
+	h.log.Info("setup step 1 complete — moving to SMTP", "user_id", uid)
+	http.Redirect(w, r, "/setup/smtp", http.StatusSeeOther)
+}
+
+// ----- Step 2: SMTP -----
+
+type smtpFormData struct {
+	Error string
+	CSRF  string
+	Form  settings.SMTP
+}
+
+func (h *Handler) smtpForm(w http.ResponseWriter, r *http.Request) {
+	d := smtpFormData{CSRF: h.ensureCSRF(w, r)}
+	d.Form, _ = settings.GetSMTP(h.db)
+	if d.Form.Port == 0 {
+		d.Form.Port = 587
+		d.Form.TLS = "starttls"
+	}
+	h.renderWith(w, "smtp.html", d)
+}
+
+func (h *Handler) smtpSubmit(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	// Clear setup cookie.
-	http.SetCookie(w, &http.Cookie{Name: cookieSetup, Value: "", Path: "/", MaxAge: -1})
+	if !h.checkCSRF(r) {
+		http.Error(w, "csrf check failed", http.StatusForbidden)
+		return
+	}
+	if r.FormValue("action") == "skip" {
+		http.Redirect(w, r, "/setup/headscale", http.StatusSeeOther)
+		return
+	}
+	port := 0
+	_, _ = fmt.Sscanf(r.FormValue("port"), "%d", &port)
+	cfg := settings.SMTP{
+		Enabled:  true,
+		Host:     strings.TrimSpace(r.FormValue("host")),
+		Port:     port,
+		Username: r.FormValue("username"),
+		Password: r.FormValue("password"),
+		From:     strings.TrimSpace(r.FormValue("from")),
+		TLS:      r.FormValue("tls"),
+	}
+	if cfg.Host == "" {
+		// Operator left it empty — treat like skip.
+		cfg.Enabled = false
+	}
+	if err := settings.SaveSMTP(h.db, cfg); err != nil {
+		h.renderWith(w, "smtp.html", smtpFormData{
+			CSRF: h.ensureCSRF(w, r), Form: cfg, Error: "Save failed: " + err.Error(),
+		})
+		return
+	}
+	http.Redirect(w, r, "/setup/headscale", http.StatusSeeOther)
+}
 
-	h.log.Info("setup complete", "user_id", uid)
-	http.Redirect(w, r, "/setup/done", http.StatusSeeOther)
+// ----- Step 3: Headscale connection -----
+
+type hsFormData struct {
+	Error string
+	CSRF  string
+	Form  settings.Headscale
+}
+
+func (h *Handler) headscaleForm(w http.ResponseWriter, r *http.Request) {
+	d := hsFormData{CSRF: h.ensureCSRF(w, r)}
+	d.Form, _ = settings.GetHeadscale(h.db)
+	if d.Form.Address == "" {
+		d.Form.Address = "http://127.0.0.1:8080"
+	}
+	h.renderWith(w, "headscale.html", d)
+}
+
+func (h *Handler) headscaleSubmit(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	if !h.checkCSRF(r) {
+		http.Error(w, "csrf check failed", http.StatusForbidden)
+		return
+	}
+
+	finishSetup := func() {
+		if err := db.SetSetting(h.db, settingDone, "true"); err != nil {
+			h.log.Error("mark setup complete", "err", err)
+		}
+		http.SetCookie(w, &http.Cookie{Name: cookieSetup, Value: "", Path: "/", MaxAge: -1})
+		h.log.Info("setup complete")
+		http.Redirect(w, r, "/setup/done", http.StatusSeeOther)
+	}
+
+	if r.FormValue("action") == "skip" {
+		finishSetup()
+		return
+	}
+
+	cfg := settings.Headscale{
+		Enabled:   true,
+		Address:   strings.TrimSpace(r.FormValue("address")),
+		APIKey:    strings.TrimSpace(r.FormValue("api_key")),
+		ClientURL: strings.TrimSpace(r.FormValue("client_url")),
+		TLSSkip:   r.FormValue("tls_skip") == "on",
+	}
+	d := hsFormData{CSRF: h.ensureCSRF(w, r), Form: cfg}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	defer cancel()
+	if err := headscale.TestConnection(ctx, cfg); err != nil {
+		d.Error = "Connection failed: " + err.Error()
+		h.renderWith(w, "headscale.html", d)
+		return
+	}
+	if err := settings.SaveHeadscale(h.db, cfg); err != nil {
+		d.Error = "Save failed: " + err.Error()
+		h.renderWith(w, "headscale.html", d)
+		return
+	}
+	finishSetup()
 }
 
 func (h *Handler) done(w http.ResponseWriter, r *http.Request) {

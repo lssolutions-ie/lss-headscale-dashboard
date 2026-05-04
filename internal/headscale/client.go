@@ -58,7 +58,10 @@ type Node struct {
 	RegisterMe string   `json:"registerMethod,omitempty"`
 	// Tags is the merged list of tags Headscale considers active on this node
 	// (forced + advertised+valid). The 0.28 API exposes only this combined field.
-	Tags []string `json:"tags,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+	ApprovedRoutes  []string `json:"approvedRoutes,omitempty"`
+	AvailableRoutes []string `json:"availableRoutes,omitempty"`
+	SubnetRoutes    []string `json:"subnetRoutes,omitempty"`
 }
 
 type PreAuthKey struct {

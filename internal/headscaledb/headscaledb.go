@@ -30,19 +30,28 @@ var (
 const DefaultPath = "/var/lib/headscale/db.sqlite"
 const DefaultRestartCmd = "sudo -n /usr/bin/systemctl restart headscale.service"
 
-// AllowedColumns is the list of columns the dashboard will write to the
-// nodes table. Includes every column in Headscale 0.28's schema; the user
-// is responsible for the consequences of editing crypto keys, FKs, or
-// timestamps.
-var AllowedColumns = []string{
-	"id", "machine_key", "node_key", "disco_key",
-	"endpoints", "host_info",
-	"ipv4", "ipv6",
+// SafeColumns are routinely-editable columns that won't break Headscale
+// authentication on their own. The Edit Node modal lets you change these
+// without an extra toggle.
+var SafeColumns = []string{
+	"id",
 	"hostname", "given_name",
-	"user_id", "register_method", "tags", "auth_key_id",
-	"last_seen", "expiry", "approved_routes",
+	"ipv4", "ipv6",
+	"tags", "approved_routes",
+	"register_method", "auth_key_id",
+	"endpoints", "host_info",
+	"last_seen", "expiry",
 	"created_at", "updated_at", "deleted_at",
 }
+
+// DangerColumns require the operator to tick "Enable dangerous edits" in the
+// modal — wrong values here brick the node's WireGuard auth.
+var DangerColumns = []string{
+	"machine_key", "node_key", "disco_key", "user_id",
+}
+
+// AllowedColumns is the union; preserves the public name external code uses.
+var AllowedColumns = append(append([]string{}, SafeColumns...), DangerColumns...)
 
 var allowedColumns = func() map[string]bool {
 	m := map[string]bool{}
@@ -51,6 +60,17 @@ var allowedColumns = func() map[string]bool {
 	}
 	return m
 }()
+
+// IsDangerColumn reports whether changing the named column requires the
+// "Enable dangerous edits" toggle in the UI.
+func IsDangerColumn(col string) bool {
+	for _, d := range DangerColumns {
+		if d == col {
+			return true
+		}
+	}
+	return false
+}
 
 type Client struct {
 	cfg settings.HeadscaleDB

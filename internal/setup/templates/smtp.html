@@ -1,0 +1,39 @@
+{{define "title"}}Setup — SMTP{{end}}
+{{define "content"}}
+<div class="step">Step 2 of 3 · SMTP</div>
+<h1>Outgoing email</h1>
+<p>Used for password-reset and recovery emails. Skippable — you can configure later under Settings.</p>
+
+{{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+
+<form method="post" action="/setup/smtp">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+
+    <label>SMTP host</label>
+    <input type="text" name="host" value="{{.Form.Host}}" placeholder="smtp.example.com">
+
+    <label>Port</label>
+    <input type="text" name="port" value="{{if .Form.Port}}{{.Form.Port}}{{else}}587{{end}}">
+
+    <label>From address</label>
+    <input type="email" name="from" value="{{.Form.From}}" placeholder="noreply@example.com">
+
+    <label>Username</label>
+    <input type="text" name="username" value="{{.Form.Username}}" autocomplete="off">
+
+    <label>Password</label>
+    <input type="password" name="password" autocomplete="new-password">
+
+    <label>TLS</label>
+    <select name="tls">
+        <option value="starttls" {{if eq .Form.TLS "starttls"}}selected{{end}}>STARTTLS (default)</option>
+        <option value="tls"      {{if eq .Form.TLS "tls"}}selected{{end}}>Implicit TLS</option>
+        <option value="none"     {{if eq .Form.TLS "none"}}selected{{end}}>None</option>
+    </select>
+
+    <div style="margin-top:1.5rem; display:flex; gap:0.5rem;">
+        <button type="submit" name="action" value="save">Save and continue →</button>
+        <button type="submit" name="action" value="skip" style="background:#9ca3af;">Skip for now</button>
+    </div>
+</form>
+{{end}}

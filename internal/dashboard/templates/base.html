@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="csrf-token" content="{{.CSRF}}">
     <title>{{template "title" .}} — LSS Headscale Dashboard</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js" defer></script>
-    <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+    <link rel="stylesheet" href="/static/tabler/css/tabler.min.css">
+    <script src="/static/tabler/js/tabler.min.js" defer></script>
+    <script src="/static/htmx/htmx.min.js" defer></script>
     <style>
         body { background: #f6f8fb; }
         /* Compact tables: shorter rows, tighter padding. */
@@ -84,6 +84,7 @@
                     <li class="nav-item {{if eq .Active "nodes"}}active{{end}}"><a class="nav-link" href="/nodes">Nodes</a></li>
                     <li class="nav-item {{if eq .Active "preauthkeys"}}active{{end}}"><a class="nav-link" href="/preauthkeys">Pre-auth keys</a></li>
                     <li class="nav-item {{if eq .Active "tags"}}active{{end}}"><a class="nav-link" href="/tags">Tags</a></li>
+                    <li class="nav-item {{if eq .Active "routes"}}active{{end}}"><a class="nav-link" href="/routes">Routes</a></li>
                     <li class="nav-item {{if eq .Active "policy"}}active{{end}}"><a class="nav-link" href="/policy">ACLs</a></li>
                     <li class="nav-item {{if eq .Active "audit"}}active{{end}}"><a class="nav-link" href="/audit">Audit log</a></li>
                     <li class="nav-item {{if eq .Active "settings"}}active{{end}}"><a class="nav-link" href="/settings">Settings</a></li>

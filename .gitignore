@@ -11,5 +11,3 @@ secrets.yaml
 .idea/
 .vscode/
 
-# Tabler.io dist (fetched at install time — see README)
-/static/tabler/

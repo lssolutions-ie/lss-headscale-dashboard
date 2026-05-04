@@ -1,0 +1,36 @@
+{{define "title"}}Routes{{end}}
+{{define "content"}}
+<h2 class="page-title m-0 mb-3">Routes <span class="text-muted ms-2 fs-5">{{len .Rows}}</span></h2>
+
+{{if .HeadscaleError}}
+<div class="alert alert-warning"><strong>Headscale connection:</strong> {{.HeadscaleError}} <a href="/settings#headscale" class="alert-link">Configure</a></div>
+{{else}}
+<div class="card allow-overflow">
+    <div class="table-search-row">
+        <input type="search" class="form-control form-control-sm" placeholder="Search across all columns…" data-search="#routes-table">
+    </div>
+    <div class="table-responsive">
+        <table id="routes-table" class="table table-compact">
+            <thead><tr><th>Node</th><th>User</th><th>Subnet</th><th>State</th><th>Available?</th></tr></thead>
+            <tbody>
+            {{range .Rows}}
+                <tr>
+                    <td><strong>{{.NodeName}}</strong> <span class="text-muted small">#{{.NodeID}}</span></td>
+                    <td>{{.UserName}}</td>
+                    <td><code>{{.CIDR}}</code></td>
+                    <td>{{if .Approved}}<span class="badge bg-success text-white">approved</span>{{else}}<span class="badge bg-secondary">advertised</span>{{end}}</td>
+                    <td>{{if .Available}}<span class="text-success">yes</span>{{else}}<span class="text-muted">no</span>{{end}}</td>
+                </tr>
+            {{else}}
+                <tr><td colspan="5" class="text-muted">No advertised or approved routes.</td></tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+</div>
+<small class="text-muted d-block mt-2">
+    Approved routes are advertised by a node and accepted by Headscale; advertised-only routes need <code>headscale nodes approve-routes</code>
+    or an Edit Node tweak to <code>approved_routes</code>. A read-only view today; toggle UI lands in a follow-up release.
+</small>
+{{end}}
+{{end}}

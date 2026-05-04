@@ -25,6 +25,7 @@ import (
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/passkey"
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/settings"
 	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/setup"
+	"github.com/lssolutions-ie/lss-headscale-dashboard/internal/web"
 )
 
 var (
@@ -182,11 +183,16 @@ func main() {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 
+	// Vendored Tabler + HTMX. Public so the login page (pre-auth) can load
+	// styles too. Cached aggressively — versioned by binary.
+	mux.Handle("GET /static/", web.Handler())
+
 	// Setup wizard routes are always mounted; once setup_complete=true the
 	// wizard handlers redirect to /login (handled inside setup.Handler).
 	setupH.Routes(mux)
 
 	loginH.Routes(mux)
+	loginH.RegisterResetRoutes(mux)
 
 	// Passkey-based login (public — no session yet).
 	mux.HandleFunc("POST /login/passkey/begin", pkH.BeginLogin)

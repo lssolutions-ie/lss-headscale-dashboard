@@ -73,9 +73,25 @@ func (h *Handler) ensureCSRF(w http.ResponseWriter, r *http.Request) string {
 func (h *Handler) checkCSRF(r *http.Request) bool { return auth.CheckCSRFToken(r) }
 
 func (h *Handler) render(w http.ResponseWriter, p page) {
+	h.renderBody(w, "login.html", p)
+}
+
+// renderBody clones the parsed template set and re-parses the chosen body
+// last, so that body's `content`/`title` blocks win for this single render.
+// Without this, all login-package templates collide on `content`.
+func (h *Handler) renderBody(w http.ResponseWriter, body string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.tmpl.ExecuteTemplate(w, "base", p); err != nil {
-		h.log.Error("render login", "err", err)
+	t, err := h.tmpl.Clone()
+	if err != nil {
+		http.Error(w, "render error", http.StatusInternalServerError)
+		return
+	}
+	if _, err := t.ParseFS(templateFS, "templates/"+body); err != nil {
+		http.Error(w, "render error", http.StatusInternalServerError)
+		return
+	}
+	if err := t.ExecuteTemplate(w, "base", data); err != nil {
+		h.log.Error("render", "body", body, "err", err)
 	}
 }
 

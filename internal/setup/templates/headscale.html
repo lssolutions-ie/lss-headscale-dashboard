@@ -1,0 +1,31 @@
+{{define "title"}}Setup — Headscale{{end}}
+{{define "content"}}
+<div class="step">Step 3 of 3 · Headscale connection</div>
+<h1>Connect to Headscale</h1>
+<p>The dashboard talks to Headscale's HTTP API. You can revisit this later from Settings.</p>
+
+{{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+
+<form method="post" action="/setup/headscale">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+
+    <label>Address <small style="color:#6b7280">(API URL)</small></label>
+    <input type="text" name="address" value="{{.Form.Address}}" placeholder="http://127.0.0.1:8080" required>
+
+    <label>API key</label>
+    <input type="password" name="api_key" value="{{.Form.APIKey}}" placeholder="hskey-api-…" required>
+
+    <label>Public client URL <small style="color:#6b7280">(your <code>server_url</code>; what Tailscale clients connect to)</small></label>
+    <input type="text" name="client_url" value="{{.Form.ClientURL}}" placeholder="https://headscale.example.com">
+
+    <label style="display:flex; align-items:center; gap:0.5rem; margin-top:1rem;">
+        <input type="checkbox" name="tls_skip" {{if .Form.TLSSkip}}checked{{end}}>
+        Skip TLS verification (self-signed certs)
+    </label>
+
+    <div style="margin-top:1.5rem; display:flex; gap:0.5rem;">
+        <button type="submit" name="action" value="test">Test &amp; finish setup →</button>
+        <button type="submit" name="action" value="skip" style="background:#9ca3af;">Skip — configure later</button>
+    </div>
+</form>
+{{end}}
