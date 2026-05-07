@@ -255,7 +255,7 @@
                         </div>
                         <div class="tab-pane" id="tab-windows">
                             <textarea data-os="windows" class="form-control font-monospace cmd-out" rows="5" readonly></textarea>
-                            <small class="form-hint">Paste into an <strong>elevated PowerShell</strong> (Run as Administrator). Downloads the Tailscale Windows MSI, installs/upgrades silently via <code>msiexec</code>, waits 3s for the service to settle, then registers. Existing installs are upgraded in place — fixes the "noise upgrade failed: unsupported client version" error from older Tailscale builds.</small>
+                            <small class="form-hint">Paste into an <strong>elevated PowerShell</strong> (Run as Administrator). Downloads the Tailscale Windows installer, runs it silently with <code>/quiet</code>, then registers. Existing Tailscale installs are upgraded in place — verified working v1.56 → v1.96.</small>
                         </div>
                         <div class="tab-pane" id="tab-bare">
                             <textarea data-os="bare" class="form-control font-monospace cmd-out" rows="2" readonly></textarea>
