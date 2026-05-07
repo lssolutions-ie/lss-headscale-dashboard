@@ -588,9 +588,15 @@ func buildRegisterCommand(o registerOpts) string {
 	if o.Nickname != "" {
 		parts = append(parts, "--nickname="+shellArg(o.Nickname))
 	}
-	if len(o.Tags) > 0 {
-		parts = append(parts, "--advertise-tags="+strings.Join(o.Tags, ","))
-	}
+	// Intentionally NO --advertise-tags here, even when o.Tags is non-empty.
+	// The auth key carries the tags via aclTags (set when we POSTed to
+	// /api/v1/preauthkey). Headscale 0.28 hard-rejects any auth-key
+	// registration whose Hostinfo.RequestTags is non-empty — see
+	// hscontrol/state/state.go:1335 ("PreAuthKey nodes get their tags
+	// from the key itself, not from client requests"). Sending the same
+	// tags via both paths surfaces as the misleading
+	// "requested tags [...] are invalid or not permitted" error.
+	_ = o.Tags // tags travel on the key, not the command line
 	if o.AcceptDNS != "" {
 		parts = append(parts, "--accept-dns="+o.AcceptDNS)
 	}
