@@ -19,6 +19,17 @@
 
                 <form id="register-node-form">
                     <input type="hidden" name="csrf" value="{{.CSRF}}">
+
+                    <div class="d-flex align-items-center gap-2 mb-3 pb-2 border-bottom">
+                        <label class="form-label m-0 text-muted small">Preset:</label>
+                        <select id="reg-preset-select" class="form-select form-select-sm" style="max-width:280px">
+                            <option value="">— Load a saved preset —</option>
+                            {{range .Presets}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+                        </select>
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="reg-preset-delete" disabled title="Delete the selected preset">Delete</button>
+                        {{if not .Presets}}<small class="text-muted ms-2">Save the current form below to reuse later.</small>{{end}}
+                    </div>
+
                     <div class="row g-3">
                         <div class="col-md-6"><label class="form-label">Owner user
                             <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="Owner user" data-bs-content="The Headscale user that owns the auth key. Pick a real user; if the node advertises tags allowed by tagOwners, Headscale automatically moves it to the virtual 'tagged-devices' user after registration.">i</a>
@@ -237,6 +248,7 @@
 
                     <div class="modal-footer mt-3 px-0">
                         <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" id="reg-preset-save" title="Save the current form values as a named preset">Save as preset</button>
                         <button type="submit" class="btn btn-primary">Generate command</button>
                     </div>
                 </form>
@@ -359,6 +371,71 @@
             const pad = n => String(n).padStart(2, '0');
             expInput.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
         });
+    });
+
+    // ----- Saved presets -----
+    // PRESETS is server-rendered JSON: [{id, name, values:{field:value,…}}]
+    const PRESETS = {{.PresetsJSON}};
+    const presetSelect = document.getElementById('reg-preset-select');
+    const presetDelBtn = document.getElementById('reg-preset-delete');
+    const presetSaveBtn = document.getElementById('reg-preset-save');
+    const presetById = id => PRESETS.find(p => String(p.id) === String(id));
+
+    const applyPreset = (values) => {
+        // Reset all fields to default state first so old leftover values
+        // from a previous preset selection don't bleed into the next.
+        form.reset();
+        if (!values) { refreshChipState(); return; }
+        Object.entries(values).forEach(([k, v]) => {
+            const el = form.querySelector(`[name="${k}"]`);
+            if (!el) return;
+            if (el.type === 'checkbox') {
+                el.checked = (v === 'on' || v === 'true');
+            } else {
+                el.value = v;
+            }
+        });
+        refreshChipState();
+    };
+
+    presetSelect?.addEventListener('change', () => {
+        const id = presetSelect.value;
+        presetDelBtn.disabled = !id;
+        if (!id) { applyPreset(null); return; }
+        const p = presetById(id);
+        if (p) applyPreset(p.values);
+    });
+
+    presetSaveBtn?.addEventListener('click', async () => {
+        const name = window.prompt('Preset name:', presetSelect?.value ? presetById(presetSelect.value)?.name || '' : '');
+        if (!name || !name.trim()) return;
+        const fd = new FormData(form);
+        fd.set('preset_name', name.trim());
+        try {
+            const res = await fetch('/nodes/register/presets/save', { method: 'POST', body: fd });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+            location.reload();
+        } catch (err) {
+            alert('Save failed: ' + err.message);
+        }
+    });
+
+    presetDelBtn?.addEventListener('click', async () => {
+        const id = presetSelect.value;
+        const p = presetById(id);
+        if (!p || !confirm(`Delete preset "${p.name}"?`)) return;
+        const fd = new FormData();
+        fd.set('csrf', form.csrf.value);
+        fd.set('id', id);
+        try {
+            const res = await fetch('/nodes/register/presets/delete', { method: 'POST', body: fd });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+            location.reload();
+        } catch (err) {
+            alert('Delete failed: ' + err.message);
+        }
     });
 })();
 </script>

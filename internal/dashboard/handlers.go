@@ -87,6 +87,8 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /nodes/tags", h.nodesTags)
 	mux.HandleFunc("POST /nodes/edit", h.nodesEdit)
 	mux.HandleFunc("POST /nodes/register", h.nodesRegister)
+	mux.HandleFunc("POST /nodes/register/presets/save", h.nodesRegisterPresetSave)
+	mux.HandleFunc("POST /nodes/register/presets/delete", h.nodesRegisterPresetDelete)
 	mux.HandleFunc("GET /preauthkeys", h.preAuthKeys)
 	mux.HandleFunc("POST /preauthkeys/create", h.preAuthKeysCreate)
 	mux.HandleFunc("POST /preauthkeys/expire", h.preAuthKeysExpire)
@@ -336,6 +338,8 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 		OnlineCount  int
 		OfflineCount int // offline but seen recently — not yet stale
 		StaleCount   int
+		Presets      []registerPreset
+		PresetsJSON  template.JS // safe-embedded JSON for the preset chooser JS
 		UsersList []string // values present on existing nodes (incl. virtual 'tagged-devices') — for the table filter
 		RealUsers []string // actual Headscale users from ListUsers — for Register Node dropdown
 		TagsList  []string
@@ -411,6 +415,16 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 				sort.Strings(pd.KnownTags)
 			}
 		}
+	}
+	if presets, err := loadRegisterPresets(h.db); err == nil {
+		pd.Presets = presets
+		if b, err := json.Marshal(presets); err == nil {
+			pd.PresetsJSON = template.JS(b)
+		} else {
+			pd.PresetsJSON = template.JS("[]")
+		}
+	} else {
+		pd.PresetsJSON = template.JS("[]")
 	}
 	h.render(w, "nodes.html", pd)
 }
