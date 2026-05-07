@@ -45,6 +45,7 @@ Two channels:
 - **`pre_auth_keys.id` is FK-referenced from `nodes.auth_key_id`** with no `ON DELETE`. Deleting a key with referencing nodes crashes Headscale on next start (status=216/GROUP-style failure). `headscaledb.DeletePreAuthKey` refuses such deletes; the dashboard UI doesn't expose Delete at all (only Expire, by ID, via direct DB).
 - **Routes are stored inline** as `nodes.approved_routes` JSON column — there's no separate routes table.
 - **Headscale's API returns user IDs as strings** even though they're uint64 in the proto.
+- **Usernames must contain `@`** for Headscale 0.28's ACL v2 parser. Any policy whose `groups` references a non-`@` user gets rejected with `"Username has to contain @"`. The `/users` New-user form requires `@` up-front; rename existing users with `headscale users rename --identifier <numeric-id> --new-name <name@suffix>` (the `--name` flag won't match a bare username because the lookup itself expects `@`).
 - **Check the `*` Tabler badge text colour** — Tabler's `bg-success`/`bg-danger` rules beat `.text-white`. Use `!important` overrides (already in `base.html`).
 
 ## Deploy topology

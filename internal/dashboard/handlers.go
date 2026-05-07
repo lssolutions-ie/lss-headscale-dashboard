@@ -271,6 +271,14 @@ func (h *Handler) usersCreate(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/users", http.StatusSeeOther)
 		return
 	}
+	// Headscale 0.28's ACL v2 parser refuses to load any policy whose `groups`
+	// reference a user without `@`. Reject the create up-front so we don't
+	// land an unreferenceable user in the table.
+	if !strings.Contains(name, "@") {
+		setFlash(w, "danger", "Username must contain '@' (Headscale 0.28 ACL v2 requires email-style names). Try "+name+"@example.com.")
+		http.Redirect(w, r, "/users", http.StatusSeeOther)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 	defer cancel()
 	if _, err := c.CreateUser(ctx, name, email); err != nil {
