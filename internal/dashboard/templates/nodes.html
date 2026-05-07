@@ -237,8 +237,13 @@
                 </form>
 
                 <div id="register-node-result" style="display:none">
-                    <div class="alert alert-success mt-2"><strong>Pre-auth key created.</strong> Run this on the node:</div>
-                    <textarea id="register-node-cmd" class="form-control font-monospace" rows="4" readonly></textarea>
+                    <div class="alert alert-success mt-2 mb-2"><strong>Pre-auth key created.</strong> Run this on the node — works on Linux, macOS, and Windows:</div>
+                    <textarea id="register-node-cmd" class="form-control font-monospace" rows="3" readonly></textarea>
+                    <small class="form-hint mt-1 d-block">
+                        <strong>Linux / macOS:</strong> prefix with <code>sudo</code> (or run as root). &nbsp;
+                        <strong>Windows:</strong> paste into an <em>elevated</em> PowerShell or cmd. &nbsp;
+                        Tailscale must already be installed.
+                    </small>
                     <div class="d-flex justify-content-end gap-2 mt-3">
                         <button type="button" class="btn btn-outline-secondary" id="register-node-copy">Copy command</button>
                         <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="location.reload()">Done</button>

@@ -502,73 +502,79 @@ type registerOpts struct {
 	AcceptRisk         string // e.g. "lose-ssh" or "all"
 }
 
+// buildRegisterCommand returns a single-line `tailscale up …` invocation.
+//
+// Single-line and no `sudo` so the same string works on every platform:
+//   - Linux/macOS: prefix with `sudo` (or run as root)
+//   - Windows:     paste into an elevated PowerShell / cmd prompt
+//   - Tailscale CLI flags are identical across platforms.
 func buildRegisterCommand(o registerOpts) string {
 	parts := []string{
-		"sudo tailscale up",
-		"  --login-server=" + o.LoginServer,
-		"  --authkey=" + o.Key,
+		"tailscale up",
+		"--login-server=" + o.LoginServer,
+		"--authkey=" + o.Key,
 	}
 	if o.Hostname != "" {
-		parts = append(parts, "  --hostname="+shellArg(o.Hostname))
+		parts = append(parts, "--hostname="+shellArg(o.Hostname))
 	}
 	if o.Nickname != "" {
-		parts = append(parts, "  --nickname="+shellArg(o.Nickname))
+		parts = append(parts, "--nickname="+shellArg(o.Nickname))
 	}
 	if len(o.Tags) > 0 {
-		parts = append(parts, "  --advertise-tags="+strings.Join(o.Tags, ","))
+		parts = append(parts, "--advertise-tags="+strings.Join(o.Tags, ","))
 	}
 	if o.AcceptDNS != "" {
-		parts = append(parts, "  --accept-dns="+o.AcceptDNS)
+		parts = append(parts, "--accept-dns="+o.AcceptDNS)
 	}
 	if o.AcceptRoutes != "" {
-		parts = append(parts, "  --accept-routes="+o.AcceptRoutes)
+		parts = append(parts, "--accept-routes="+o.AcceptRoutes)
 	}
 	if o.AdvertiseExitNode {
-		parts = append(parts, "  --advertise-exit-node")
+		parts = append(parts, "--advertise-exit-node")
 	}
 	if o.AdvertiseRoutes != "" {
-		parts = append(parts, "  --advertise-routes="+o.AdvertiseRoutes)
+		parts = append(parts, "--advertise-routes="+o.AdvertiseRoutes)
 	}
 	if o.ExitNode != "" {
-		parts = append(parts, "  --exit-node="+shellArg(o.ExitNode))
+		parts = append(parts, "--exit-node="+shellArg(o.ExitNode))
 	}
 	if o.ExitNodeLAN {
-		parts = append(parts, "  --exit-node-allow-lan-access")
+		parts = append(parts, "--exit-node-allow-lan-access")
 	}
 	if o.Reset {
-		parts = append(parts, "  --reset")
+		parts = append(parts, "--reset")
 	}
 	if o.ForceReauth {
-		parts = append(parts, "  --force-reauth")
+		parts = append(parts, "--force-reauth")
 	}
 	if o.Unattended {
-		parts = append(parts, "  --unattended")
+		parts = append(parts, "--unattended")
 	}
 	if o.ShieldsUp {
-		parts = append(parts, "  --shields-up")
+		parts = append(parts, "--shields-up")
 	}
 	if o.SSH {
-		parts = append(parts, "  --ssh")
+		parts = append(parts, "--ssh")
 	}
 	if o.Operator != "" {
-		parts = append(parts, "  --operator="+shellArg(o.Operator))
+		parts = append(parts, "--operator="+shellArg(o.Operator))
 	}
 	if o.Timeout != "" {
-		parts = append(parts, "  --timeout="+o.Timeout)
+		parts = append(parts, "--timeout="+o.Timeout)
 	}
 	if o.NetfilterMode != "" {
-		parts = append(parts, "  --netfilter-mode="+o.NetfilterMode)
+		parts = append(parts, "--netfilter-mode="+o.NetfilterMode)
 	}
 	if o.SNATSubnetRoutes != "" {
-		parts = append(parts, "  --snat-subnet-routes="+o.SNATSubnetRoutes)
+		parts = append(parts, "--snat-subnet-routes="+o.SNATSubnetRoutes)
 	}
 	if o.StatefulFiltering != "" {
-		parts = append(parts, "  --stateful-filtering="+o.StatefulFiltering)
+		parts = append(parts, "--stateful-filtering="+o.StatefulFiltering)
 	}
 	if o.AcceptRisk != "" {
-		parts = append(parts, "  --accept-risk="+o.AcceptRisk)
+		parts = append(parts, "--accept-risk="+o.AcceptRisk)
 	}
-	return strings.Join(parts, " \\\n")
+	return strings.Join(parts, " ")
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
