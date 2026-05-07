@@ -533,7 +533,14 @@ func buildRegisterCommands(o registerOpts) registerCommands {
 		// `/quiet` (verified upgrades from v1.56 → v1.96 in production).
 		// /S works too but /quiet is what we ship since it's already proven.
 		// MSI is NOT shipped at the "latest" alias — only the EXE is.
-		Windows: `$ts="$env:TEMP\tailscale-setup.exe"; Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile $ts; Start-Process -Wait $ts -ArgumentList '/quiet'; & 'C:\Program Files\Tailscale\tailscale.exe' up ` + flags,
+		// After install we Restart-Service Tailscale: the installer drops new
+		// tailscale.exe + tailscaled.exe on disk but the running tailscaled
+		// service stays on the OLD binary until restart. `tailscale up` talks
+		// to that service over LocalAPI, so without a restart the noise
+		// protocol version sent to Headscale is the old one — Headscale's
+		// minimum_version gate then rejects with a 500 that the client
+		// helpfully mis-reports as "tags invalid or not permitted".
+		Windows: `$ts="$env:TEMP\tailscale-setup.exe"; Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile $ts; Start-Process -Wait $ts -ArgumentList '/quiet'; Restart-Service Tailscale -Force; Start-Sleep -Seconds 5; & 'C:\Program Files\Tailscale\tailscale.exe' up ` + flags,
 	}
 }
 
