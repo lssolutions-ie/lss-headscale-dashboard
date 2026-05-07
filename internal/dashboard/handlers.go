@@ -530,17 +530,18 @@ func buildRegisterCommands(o registerOpts) registerCommands {
 		Linux:   "curl -fsSL https://tailscale.com/install.sh | sh && sudo " + bare,
 		MacOS:   "curl -fsSL https://pkgs.tailscale.com/stable/Tailscale-latest-macos.pkg -o /tmp/tailscale.pkg && sudo installer -pkg /tmp/tailscale.pkg -target / && sudo " + bare,
 		// Windows: Tailscale's NSIS installer at /stable/...-latest.exe accepts
-		// `/quiet` (verified upgrades from v1.56 → v1.96 in production).
-		// /S works too but /quiet is what we ship since it's already proven.
-		// MSI is NOT shipped at the "latest" alias — only the EXE is.
-		// After install we Restart-Service Tailscale: the installer drops new
-		// tailscale.exe + tailscaled.exe on disk but the running tailscaled
-		// service stays on the OLD binary until restart. `tailscale up` talks
-		// to that service over LocalAPI, so without a restart the noise
-		// protocol version sent to Headscale is the old one — Headscale's
-		// minimum_version gate then rejects with a 500 that the client
-		// helpfully mis-reports as "tags invalid or not permitted".
-		Windows: `$ts="$env:TEMP\tailscale-setup.exe"; Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile $ts; Start-Process -Wait $ts -ArgumentList '/quiet'; Restart-Service Tailscale -Force; Start-Sleep -Seconds 5; & 'C:\Program Files\Tailscale\tailscale.exe' up ` + flags,
+		// `/quiet`. MSI is NOT shipped at the "latest" alias — only the EXE.
+		// We MUST stop the Tailscale service before running the installer,
+		// otherwise Windows holds tailscaled.exe open and NSIS quietly
+		// queues a MoveFileEx-after-reboot replacement instead of writing
+		// the new binary now. Symptom when this is wrong: tailscale.exe
+		// --version reports the new version (CLI is replaceable since
+		// nothing holds it), but the running tailscaled stays on the OLD
+		// binary, sends old-noise-protocol traffic to Headscale, and gets
+		// HTTP 500 which the client wraps as "tags invalid or not
+		// permitted" — completely misleading. Fix: stop service → install
+		// → start service → tailscale up.
+		Windows: `$ts="$env:TEMP\tailscale-setup.exe"; Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile $ts; Stop-Service Tailscale -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 3; Start-Process -Wait $ts -ArgumentList '/quiet'; Start-Service Tailscale; Start-Sleep -Seconds 5; & 'C:\Program Files\Tailscale\tailscale.exe' up ` + flags,
 	}
 }
 
