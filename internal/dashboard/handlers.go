@@ -315,19 +315,32 @@ func (h *Handler) usersDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/users", http.StatusSeeOther)
 }
 
+// nodeView decorates a headscale.Node with derived UI flags. Staleness is
+// computed server-side because the API exposes LastSeen only as a string and
+// the template can't do time arithmetic.
+type nodeView struct {
+	headscale.Node
+	IsStale bool // last seen > 30 days ago, or no parseable last_seen
+}
+
+// staleAfter is how long a node can be unseen before the UI flags it.
+// Matches typical "I'd notice if it never came back" expectations.
+const staleAfter = 30 * 24 * time.Hour
+
 func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 	bp := h.loadBase(w, r, "nodes")
 	type pageData struct {
 		basePage
-		Nodes      []headscale.Node
-		UsersList  []string // values present on existing nodes (incl. virtual 'tagged-devices') — for the table filter
-		RealUsers  []string // actual Headscale users from ListUsers — for Register Node dropdown
-		TagsList   []string
-		DBEnabled  bool
-		DBNodes    map[string]headscaledb.FullNode
-		DBColumns  []string
-		ClientURL  string
-		KnownTags  []string
+		Nodes     []nodeView
+		StaleCount int
+		UsersList []string // values present on existing nodes (incl. virtual 'tagged-devices') — for the table filter
+		RealUsers []string // actual Headscale users from ListUsers — for Register Node dropdown
+		TagsList  []string
+		DBEnabled bool
+		DBNodes   map[string]headscaledb.FullNode
+		DBColumns []string
+		ClientURL string
+		KnownTags []string
 	}
 	pd := pageData{basePage: bp}
 	hdb, _ := settings.GetHeadscaleDB(h.db)
@@ -353,7 +366,19 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			pd.HeadscaleError = err.Error()
 		} else {
-			pd.Nodes = ns
+			cutoff := time.Now().Add(-staleAfter)
+			views := make([]nodeView, 0, len(ns))
+			for _, n := range ns {
+				stale := true // empty / unparseable last_seen counts as stale
+				if t, perr := time.Parse(time.RFC3339, n.LastSeen); perr == nil {
+					stale = t.Before(cutoff)
+				}
+				if stale {
+					pd.StaleCount++
+				}
+				views = append(views, nodeView{Node: n, IsStale: stale})
+			}
+			pd.Nodes = views
 			pd.UsersList = uniqueUsersFromNodes(ns)
 			pd.TagsList = uniqueTagsFromNodes(ns)
 		}

@@ -1,7 +1,9 @@
 {{define "title"}}Nodes{{end}}
 {{define "content"}}
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="page-title m-0">Nodes <span class="text-muted ms-2 fs-5">{{len .Nodes}}</span></h2>
+    <h2 class="page-title m-0">Nodes <span class="text-muted ms-2 fs-5">{{len .Nodes}}</span>
+        {{if .StaleCount}}<span class="badge bg-warning text-dark ms-2" title="Nodes not seen in over 30 days">{{.StaleCount}} stale</span>{{end}}
+    </h2>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#register-node">Register node</button>
 </div>
 
@@ -377,6 +379,11 @@
             <option value="">All tags</option>
             {{range .TagsList}}<option value="{{.}}">{{.}}</option>{{end}}
         </select>
+        <select class="form-select form-select-sm" style="max-width:170px" data-attr-filter="#nodes-table" data-attr="stale">
+            <option value="">All ages</option>
+            <option value="0">Active (≤30 days)</option>
+            <option value="1">Stale (&gt;30 days)</option>
+        </select>
         {{if not .DBEnabled}}<small class="text-muted ms-auto">DB editing disabled — <a href="/settings#headscale-db">enable</a> to edit IP / hostname</small>{{end}}
     </div>
     <div class="table-responsive">
@@ -384,7 +391,7 @@
             <thead><tr><th class="w-1">ID</th><th>Name</th><th>User</th><th>IPs</th><th>Tags</th><th>Status</th><th>Last seen</th><th class="w-1"></th></tr></thead>
             <tbody>
             {{range .Nodes}}
-                <tr>
+                <tr data-stale="{{if .IsStale}}1{{else}}0{{end}}">
                     <td><span class="text-muted">#{{.ID}}</span></td>
                     <td><strong>{{.GivenName}}</strong>{{if ne .Name .GivenName}}<small class="text-muted ms-1">({{.Name}})</small>{{end}}</td>
                     <td>{{.User.Name}}</td>
@@ -393,7 +400,7 @@
                         {{range .Tags}}<span class="tag-badge tag-forced">{{.}}</span>{{end}}
                     </td>
                     <td>{{if .Online}}<span class="badge bg-success text-white">online</span>{{else}}<span class="badge bg-danger text-white">offline</span>{{end}}</td>
-                    <td><span class="text-muted small">{{.LastSeen}}</span></td>
+                    <td><span class="text-muted small">{{.LastSeen}}</span>{{if .IsStale}} <span class="badge bg-warning text-dark" title="Not seen in over 30 days">stale</span>{{end}}</td>
                     <td>
                         <div class="dropdown">
                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" data-bs-strategy="fixed">Actions</button>

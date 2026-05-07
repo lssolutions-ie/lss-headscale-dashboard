@@ -118,13 +118,24 @@ document.addEventListener('input', (e) => {
 });
 // Universal table filter: any [data-filter="<sel>"][data-col="<n>"] select
 // filters rows at <sel> by exact-match value in column n (0-indexed).
+// Or [data-attr-filter="<sel>"][data-attr="<name>"] filters by row's
+// data-<name> attribute (used for derived flags like staleness).
 document.addEventListener('change', (e) => {
-    const sel = e.target.dataset.filter;
-    if (!sel) return;
-    const col = parseInt(e.target.dataset.col, 10);
-    const want = e.target.value;
-    const table = document.querySelector(sel);
+    const colSel = e.target.dataset.filter;
+    const attrSel = e.target.dataset.attrFilter;
+    if (!colSel && !attrSel) return;
+    const table = document.querySelector(colSel || attrSel);
     if (!table) return;
+    const want = e.target.value;
+    if (attrSel) {
+        const attr = e.target.dataset.attr;
+        table.querySelectorAll('tbody tr').forEach(tr => {
+            if (want === '') { tr.style.display = ''; return; }
+            tr.style.display = (tr.dataset[attr] === want) ? '' : 'none';
+        });
+        return;
+    }
+    const col = parseInt(e.target.dataset.col, 10);
     table.querySelectorAll('tbody tr').forEach(tr => {
         if (want === '') { tr.style.display = ''; return; }
         const cell = tr.children[col];
