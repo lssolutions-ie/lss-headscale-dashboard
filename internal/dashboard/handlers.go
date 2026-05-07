@@ -529,7 +529,10 @@ func buildRegisterCommands(o registerOpts) registerCommands {
 		Bare:    bare,
 		Linux:   "curl -fsSL https://tailscale.com/install.sh | sh && sudo " + bare,
 		MacOS:   "curl -fsSL https://pkgs.tailscale.com/stable/Tailscale-latest-macos.pkg -o /tmp/tailscale.pkg && sudo installer -pkg /tmp/tailscale.pkg -target / && sudo " + bare,
-		Windows: `$ts="$env:TEMP\tailscale-setup.exe"; Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile $ts; Start-Process -Wait $ts -ArgumentList '/quiet'; & 'C:\Program Files\Tailscale\tailscale.exe' up ` + flags,
+		// Windows: prefer the .msi (msiexec accepts /quiet correctly and upgrades
+		// in place). The .exe is NSIS and would need /S — easy to get wrong, and
+		// on existing installs sometimes silently no-ops.
+		Windows: `$ts="$env:TEMP\tailscale.msi"; Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.msi -OutFile $ts; Start-Process msiexec.exe -ArgumentList '/i',$ts,'/quiet','/norestart' -Wait; Start-Sleep -Seconds 3; & 'C:\Program Files\Tailscale\tailscale.exe' up ` + flags,
 	}
 }
 
