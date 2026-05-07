@@ -1,8 +1,10 @@
 {{define "title"}}Nodes{{end}}
 {{define "content"}}
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h2 class="page-title m-0">Nodes <span class="text-muted ms-2 fs-5">{{len .Nodes}}</span>
-        {{if .StaleCount}}<span class="badge bg-warning text-dark ms-2" title="Nodes not seen in over 30 days">{{.StaleCount}} stale</span>{{end}}
+    <h2 class="page-title m-0">Nodes
+        <span class="badge bg-secondary ms-2" title="Total nodes registered">{{.TotalCount}} total</span>
+        <span class="badge bg-success ms-1" title="Currently connected">{{.OnlineCount}} online</span>
+        {{if .StaleCount}}<span class="badge bg-warning text-dark ms-1" title="Nodes not seen in over 30 days">{{.StaleCount}} stale</span>{{end}}
     </h2>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#register-node">Register node</button>
 </div>

@@ -331,8 +331,10 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 	bp := h.loadBase(w, r, "nodes")
 	type pageData struct {
 		basePage
-		Nodes     []nodeView
-		StaleCount int
+		Nodes       []nodeView
+		TotalCount  int
+		OnlineCount int
+		StaleCount  int
 		UsersList []string // values present on existing nodes (incl. virtual 'tagged-devices') — for the table filter
 		RealUsers []string // actual Headscale users from ListUsers — for Register Node dropdown
 		TagsList  []string
@@ -376,8 +378,12 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 				if stale {
 					pd.StaleCount++
 				}
+				if n.Online {
+					pd.OnlineCount++
+				}
 				views = append(views, nodeView{Node: n, IsStale: stale})
 			}
+			pd.TotalCount = len(views)
 			pd.Nodes = views
 			pd.UsersList = uniqueUsersFromNodes(ns)
 			pd.TagsList = uniqueTagsFromNodes(ns)
