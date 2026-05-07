@@ -331,10 +331,11 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 	bp := h.loadBase(w, r, "nodes")
 	type pageData struct {
 		basePage
-		Nodes       []nodeView
-		TotalCount  int
-		OnlineCount int
-		StaleCount  int
+		Nodes        []nodeView
+		TotalCount   int
+		OnlineCount  int
+		OfflineCount int // offline but seen recently — not yet stale
+		StaleCount   int
 		UsersList []string // values present on existing nodes (incl. virtual 'tagged-devices') — for the table filter
 		RealUsers []string // actual Headscale users from ListUsers — for Register Node dropdown
 		TagsList  []string
@@ -375,11 +376,13 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 				if t, perr := time.Parse(time.RFC3339, n.LastSeen); perr == nil {
 					stale = t.Before(cutoff)
 				}
-				if stale {
-					pd.StaleCount++
-				}
-				if n.Online {
+				switch {
+				case n.Online:
 					pd.OnlineCount++
+				case stale:
+					pd.StaleCount++
+				default:
+					pd.OfflineCount++
 				}
 				views = append(views, nodeView{Node: n, IsStale: stale})
 			}
