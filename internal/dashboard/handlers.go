@@ -455,7 +455,7 @@ func (h *Handler) nodesRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := buildRegisterCommand(registerOpts{
+	cmds := buildRegisterCommands(registerOpts{
 		LoginServer:       loginServer,
 		Key:               key.Key,
 		Hostname:          hostname,
@@ -482,7 +482,12 @@ func (h *Handler) nodesRegister(w http.ResponseWriter, r *http.Request) {
 	audit.Write(h.db, actorID(r), currentIP(r), audit.ActionPreAuthKeyCreate, user, map[string]any{
 		"reusable": reusable, "ephemeral": ephemeral, "tags": tags, "via": "register-node",
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "command": cmd, "key": key.Key})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":       true,
+		"command":  cmds.Bare, // back-compat
+		"commands": cmds,
+		"key":      key.Key,
+	})
 }
 
 type registerOpts struct {
@@ -508,6 +513,24 @@ type registerOpts struct {
 	SNATSubnetRoutes   string // "" | "true" | "false"
 	StatefulFiltering  string // "" | "true" | "false"
 	AcceptRisk         string // e.g. "lose-ssh" or "all"
+}
+
+type registerCommands struct {
+	Bare    string `json:"bare"`    // `tailscale up …`  — for already-installed clients
+	Linux   string `json:"linux"`   // tailscale.com/install.sh | sh && sudo tailscale up …
+	MacOS   string `json:"macos"`   // .pkg download + installer + sudo tailscale up …
+	Windows string `json:"windows"` // PowerShell: download MSI/exe + silent install + tailscale.exe up …
+}
+
+func buildRegisterCommands(o registerOpts) registerCommands {
+	bare := buildRegisterCommand(o)
+	flags := strings.TrimPrefix(bare, "tailscale up ")
+	return registerCommands{
+		Bare:    bare,
+		Linux:   "curl -fsSL https://tailscale.com/install.sh | sh && sudo " + bare,
+		MacOS:   "curl -fsSL https://pkgs.tailscale.com/stable/Tailscale-latest-macos.pkg -o /tmp/tailscale.pkg && sudo installer -pkg /tmp/tailscale.pkg -target / && sudo " + bare,
+		Windows: `$ts="$env:TEMP\tailscale-setup.exe"; Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile $ts; Start-Process -Wait $ts -ArgumentList '/quiet'; & 'C:\Program Files\Tailscale\tailscale.exe' up ` + flags,
+	}
 }
 
 // buildRegisterCommand returns a single-line `tailscale up …` invocation.

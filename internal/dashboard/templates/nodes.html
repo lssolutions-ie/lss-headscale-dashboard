@@ -237,15 +237,33 @@
                 </form>
 
                 <div id="register-node-result" style="display:none">
-                    <div class="alert alert-success mt-2 mb-2"><strong>Pre-auth key created.</strong> Run this on the node — works on Linux, macOS, and Windows:</div>
-                    <textarea id="register-node-cmd" class="form-control font-monospace" rows="3" readonly></textarea>
-                    <small class="form-hint mt-1 d-block">
-                        <strong>Linux / macOS:</strong> prefix with <code>sudo</code> (or run as root). &nbsp;
-                        <strong>Windows:</strong> paste into an <em>elevated</em> PowerShell or cmd. &nbsp;
-                        Tailscale must already be installed.
-                    </small>
+                    <div class="alert alert-success mt-2 mb-2"><strong>Pre-auth key created.</strong> Pick the platform of the new node, copy the one-liner, run it as administrator:</div>
+                    <ul class="nav nav-tabs" role="tablist">
+                        <li class="nav-item"><a href="#tab-linux"   class="nav-link active" data-bs-toggle="tab">🐧 Linux</a></li>
+                        <li class="nav-item"><a href="#tab-macos"   class="nav-link" data-bs-toggle="tab">🍎 macOS</a></li>
+                        <li class="nav-item"><a href="#tab-windows" class="nav-link" data-bs-toggle="tab">🪟 Windows</a></li>
+                        <li class="nav-item"><a href="#tab-bare"    class="nav-link" data-bs-toggle="tab">Already installed</a></li>
+                    </ul>
+                    <div class="tab-content border border-top-0 rounded-bottom p-2 bg-white">
+                        <div class="tab-pane active" id="tab-linux">
+                            <textarea data-os="linux" class="form-control font-monospace cmd-out" rows="3" readonly></textarea>
+                            <small class="form-hint">Installs (or updates) Tailscale via the official installer, then registers. Runs <code>sudo</code> internally — paste into a shell with sudo rights.</small>
+                        </div>
+                        <div class="tab-pane" id="tab-macos">
+                            <textarea data-os="macos" class="form-control font-monospace cmd-out" rows="4" readonly></textarea>
+                            <small class="form-hint">Downloads the Tailscale macOS <code>.pkg</code>, installs (or updates) the CLI, then registers. Run with sudo. Note: this installs the standalone CLI, not the Mac App Store GUI.</small>
+                        </div>
+                        <div class="tab-pane" id="tab-windows">
+                            <textarea data-os="windows" class="form-control font-monospace cmd-out" rows="4" readonly></textarea>
+                            <small class="form-hint">Paste into an <strong>elevated PowerShell</strong>. Downloads the latest Tailscale Windows installer, installs silently, then registers. Existing Tailscale installs are upgraded in place.</small>
+                        </div>
+                        <div class="tab-pane" id="tab-bare">
+                            <textarea data-os="bare" class="form-control font-monospace cmd-out" rows="2" readonly></textarea>
+                            <small class="form-hint">Use this if Tailscale is already installed and current. Linux/macOS: prefix <code>sudo</code>. Windows: elevated PowerShell or cmd.</small>
+                        </div>
+                    </div>
                     <div class="d-flex justify-content-end gap-2 mt-3">
-                        <button type="button" class="btn btn-outline-secondary" id="register-node-copy">Copy command</button>
+                        <button type="button" class="btn btn-outline-secondary" id="register-node-copy">Copy active tab</button>
                         <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="location.reload()">Done</button>
                     </div>
                 </div>
@@ -259,7 +277,6 @@
 (function () {
     const form = document.getElementById('register-node-form');
     const result = document.getElementById('register-node-result');
-    const cmdBox = document.getElementById('register-node-cmd');
     const errBox = document.getElementById('register-node-error');
     const copyBtn = document.getElementById('register-node-copy');
     if (!form) return;
@@ -267,14 +284,16 @@
         e.preventDefault();
         errBox.style.display = 'none';
         const fd = new FormData(form);
-        // datetime-local is local time without TZ — convert to ISO-8601 UTC for Headscale.
         const localExp = fd.get('expiration');
         if (localExp) fd.set('expiration', new Date(localExp).toISOString());
         try {
             const res = await fetch('/nodes/register', { method: 'POST', body: fd });
             const data = await res.json();
             if (!data.ok) throw new Error(data.error || ('HTTP ' + res.status));
-            cmdBox.value = data.command;
+            const cmds = data.commands || {};
+            document.querySelectorAll('.cmd-out').forEach(t => {
+                t.value = cmds[t.dataset.os] || data.command || '';
+            });
             form.style.display = 'none';
             result.style.display = '';
         } catch (err) {
@@ -283,10 +302,12 @@
         }
     });
     copyBtn?.addEventListener('click', () => {
-        cmdBox.select();
+        const active = document.querySelector('#register-node-result .tab-pane.active .cmd-out');
+        if (!active) return;
+        active.select();
         document.execCommand('copy');
         copyBtn.textContent = 'Copied ✓';
-        setTimeout(() => copyBtn.textContent = 'Copy command', 1500);
+        setTimeout(() => copyBtn.textContent = 'Copy active tab', 1500);
     });
 
     // ACL-tag chip toggles: click to add/remove from the comma-separated input.
