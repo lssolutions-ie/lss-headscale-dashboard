@@ -5,7 +5,7 @@
         <span class="badge bg-secondary text-white ms-2" title="Total nodes registered">{{.TotalCount}} total</span>
         <span class="badge bg-success text-white ms-1" title="Currently connected">{{.OnlineCount}} online</span>
         {{if .OfflineCount}}<span class="badge bg-danger text-white ms-1" title="Disconnected but seen in the last 30 days">{{.OfflineCount}} offline</span>{{end}}
-        {{if .StaleCount}}<span class="badge bg-warning text-dark ms-1" title="Nodes not seen in over 30 days">{{.StaleCount}} stale</span>{{end}}
+        {{if .StaleCount}}<span class="badge bg-warning ms-1" title="Nodes not seen in over 30 days">{{.StaleCount}} stale</span>{{end}}
     </h2>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#register-node">Register node</button>
 </div>
@@ -35,6 +35,7 @@
                             <a class="info-i" tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="focus" data-bs-title="Owner user" data-bs-content="The Headscale user that owns the auth key. Pick a real user; if the node advertises tags allowed by tagOwners, Headscale automatically moves it to the virtual 'tagged-devices' user after registration.">i</a>
                             </label>
                             <select name="user" class="form-select" required>
+                                <option value="" disabled selected>— Choose owner user —</option>
                                 {{range .RealUsers}}<option value="{{.}}">{{.}}</option>{{else}}<option value="" disabled>(no users — create one first)</option>{{end}}
                             </select>
                         </div>
@@ -256,9 +257,9 @@
                 <div id="register-node-result" style="display:none">
                     <div class="alert alert-success mt-2 mb-2"><strong>Pre-auth key created.</strong> Pick the platform of the new node, copy the one-liner, run it as administrator:</div>
                     <ul class="nav nav-tabs" role="tablist">
-                        <li class="nav-item"><a href="#tab-linux"   class="nav-link active" data-bs-toggle="tab">🐧 Linux</a></li>
-                        <li class="nav-item"><a href="#tab-macos"   class="nav-link" data-bs-toggle="tab">🍎 macOS</a></li>
-                        <li class="nav-item"><a href="#tab-windows" class="nav-link" data-bs-toggle="tab">🪟 Windows</a></li>
+                        <li class="nav-item"><a href="#tab-linux"   class="nav-link active" data-bs-toggle="tab">Linux</a></li>
+                        <li class="nav-item"><a href="#tab-macos"   class="nav-link" data-bs-toggle="tab">macOS</a></li>
+                        <li class="nav-item"><a href="#tab-windows" class="nav-link" data-bs-toggle="tab">Windows</a></li>
                         <li class="nav-item"><a href="#tab-bare"    class="nav-link" data-bs-toggle="tab">Already installed</a></li>
                     </ul>
                     <div class="tab-content border border-top-0 rounded-bottom p-2 bg-white">
@@ -381,18 +382,31 @@
     const presetSaveBtn = document.getElementById('reg-preset-save');
     const presetById = id => PRESETS.find(p => String(p.id) === String(id));
 
+    // The list of form field names a preset (de)hydrates. Must stay in sync
+    // with presetFieldsToCapture in register_presets.go on the server.
+    const PRESET_FIELDS = [
+        'user','hostname','tags','reusable','ephemeral','login_server',
+        'accept_dns','accept_routes','advertise_exit_node','advertise_routes',
+        'exit_node','exit_node_lan','reset','force_reauth','unattended',
+        'shields_up','ssh','timeout','operator','nickname',
+        'netfilter_mode','snat_subnet_routes','stateful_filtering','accept_risk',
+    ];
+
+    // Apply a preset's values map to the form. We do NOT call form.reset() —
+    // an <input name="reset"> in the form shadows HTMLFormElement.reset(),
+    // and calling it would throw "form.reset is not a function". Instead
+    // we explicitly walk PRESET_FIELDS, setting each from the preset (or
+    // clearing to its empty state when the preset doesn't include it).
     const applyPreset = (values) => {
-        // Reset all fields to default state first so old leftover values
-        // from a previous preset selection don't bleed into the next.
-        form.reset();
-        if (!values) { refreshChipState(); return; }
-        Object.entries(values).forEach(([k, v]) => {
-            const el = form.querySelector(`[name="${k}"]`);
+        values = values || {};
+        PRESET_FIELDS.forEach(name => {
+            const el = form.querySelector(`[name="${name}"]`);
             if (!el) return;
+            const v = values[name];
             if (el.type === 'checkbox') {
                 el.checked = (v === 'on' || v === 'true');
             } else {
-                el.value = v;
+                el.value = v ?? '';
             }
         });
         refreshChipState();
@@ -480,7 +494,7 @@
                         {{range .Tags}}<span class="tag-badge tag-forced">{{.}}</span>{{end}}
                     </td>
                     <td>{{if .Online}}<span class="badge bg-success text-white">online</span>{{else}}<span class="badge bg-danger text-white">offline</span>{{end}}</td>
-                    <td><span class="text-muted small">{{.LastSeen}}</span>{{if .IsStale}} <span class="badge bg-warning text-dark" title="Not seen in over 30 days">stale</span>{{end}}</td>
+                    <td><span class="text-muted small">{{.LastSeen}}</span>{{if .IsStale}} <span class="badge bg-warning" title="Not seen in over 30 days">stale</span>{{end}}</td>
                     <td>
                         <div class="dropdown">
                             <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" data-bs-strategy="fixed">Actions</button>
