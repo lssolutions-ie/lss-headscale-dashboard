@@ -492,7 +492,7 @@
             {{range .Nodes}}
                 <tr data-stale="{{if .IsStale}}1{{else}}0{{end}}">
                     <td><span class="text-muted">#{{.ID}}</span></td>
-                    <td><strong>{{.GivenName}}</strong>{{if ne .Name .GivenName}}<small class="text-muted ms-1">({{.Name}})</small>{{end}}</td>
+                    <td><a href="/nodes/{{.ID}}" class="text-reset text-decoration-none"><strong>{{.GivenName}}</strong></a>{{if ne .Name .GivenName}}<small class="text-muted ms-1">({{.Name}})</small>{{end}}</td>
                     <td>{{.User.Name}}</td>
                     <td><code>{{range $i, $ip := .IPAddrs}}{{if $i}}, {{end}}{{$ip}}{{end}}</code></td>
                     <td>

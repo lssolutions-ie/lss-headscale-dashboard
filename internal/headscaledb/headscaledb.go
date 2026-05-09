@@ -387,6 +387,41 @@ func (c *Client) DeletePreAuthKey(id int64) error {
 	return nil
 }
 
+// PreAuthKeyRow is the subset of pre_auth_keys columns the per-node detail
+// page surfaces. All values are strings; NULLs become "". Tags retains the
+// raw JSON-encoded form Headscale stores (e.g. `["tag:foo","tag:bar"]`).
+type PreAuthKeyRow struct {
+	ID         string
+	Prefix     string
+	Used       string
+	Reusable   string
+	Ephemeral  string
+	Expiration string
+	CreatedAt  string
+	Tags       string
+	UserID     string
+}
+
+// GetPreAuthKey returns the row matching id, or (zero, nil) when not found.
+func (c *Client) GetPreAuthKey(id string) (PreAuthKeyRow, error) {
+	var row PreAuthKeyRow
+	d, err := c.open()
+	if err != nil {
+		return row, err
+	}
+	defer d.Close()
+	q := `SELECT id, COALESCE(prefix,''), COALESCE(used,0), COALESCE(reusable,0),
+	             COALESCE(ephemeral,0), COALESCE(expiration,''), COALESCE(created_at,''),
+	             COALESCE(tags,''), COALESCE(user_id,0)
+	      FROM pre_auth_keys WHERE id = ?`
+	err = d.QueryRow(q, id).Scan(&row.ID, &row.Prefix, &row.Used, &row.Reusable,
+		&row.Ephemeral, &row.Expiration, &row.CreatedAt, &row.Tags, &row.UserID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return PreAuthKeyRow{}, nil
+	}
+	return row, err
+}
+
 // RestartHeadscale runs the configured restart command (default uses sudo +
 // systemctl). Returns combined stdout/stderr and any error.
 func (c *Client) RestartHeadscale() (string, error) {

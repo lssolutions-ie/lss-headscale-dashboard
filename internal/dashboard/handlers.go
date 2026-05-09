@@ -82,6 +82,7 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /users/create", h.usersCreate)
 	mux.HandleFunc("POST /users/delete", h.usersDelete)
 	mux.HandleFunc("GET /nodes", h.nodes)
+	mux.HandleFunc("GET /nodes/{id}", h.nodeDetail)
 	mux.HandleFunc("POST /nodes/expire", h.nodesExpire)
 	mux.HandleFunc("POST /nodes/delete", h.nodesDelete)
 	mux.HandleFunc("POST /nodes/tags", h.nodesTags)
@@ -494,6 +495,113 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 		pd.PresetsJSON = template.JS("[]")
 	}
 	h.render(w, "nodes.html", pd)
+}
+
+// nodeDetail renders /nodes/{id} — full per-node detail page with identity,
+// network, tags, hostinfo, recent audit events, and the same Edit modal as
+// the index page.
+func (h *Handler) nodeDetail(w http.ResponseWriter, r *http.Request) {
+	bp := h.loadBase(w, r, "nodes")
+	id := r.PathValue("id")
+	type pageData struct {
+		basePage
+		Node         *headscale.Node
+		DBRow        headscaledb.FullNode
+		HostInfoJSON string // pretty-printed for display
+		IsStale      bool
+		DERPID       int
+		DERPName     string
+		AuthKey      headscaledb.PreAuthKeyRow
+		AuthKeyTags  []string
+		Audit        []audit.Entry
+		DBEnabled    bool
+		DBColumns    []string
+		ClientURL    string
+		KnownTags    []string
+	}
+	pd := pageData{basePage: bp}
+
+	if hs, _ := settings.GetHeadscale(h.db); hs.ClientURL != "" {
+		pd.ClientURL = hs.ClientURL
+	} else if hs.Address != "" {
+		pd.ClientURL = hs.Address
+	}
+
+	c, errStr := h.headscaleClient(r.Context())
+	if c == nil {
+		pd.HeadscaleError = errStr
+		h.render(w, "node_detail.html", pd)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+	defer cancel()
+	ns, err := c.ListNodes(ctx, "")
+	if err != nil {
+		pd.HeadscaleError = err.Error()
+		h.render(w, "node_detail.html", pd)
+		return
+	}
+	for i := range ns {
+		if ns[i].ID == id {
+			pd.Node = &ns[i]
+			break
+		}
+	}
+	if pd.Node == nil {
+		http.Error(w, "node not found", http.StatusNotFound)
+		return
+	}
+	if t, perr := time.Parse(time.RFC3339, pd.Node.LastSeen); perr == nil {
+		pd.IsStale = t.Before(time.Now().Add(-staleAfter))
+	} else {
+		pd.IsStale = true
+	}
+
+	hdb, _ := settings.GetHeadscaleDB(h.db)
+	if hdb.Enabled && hdb.Path != "" {
+		pd.DBEnabled = true
+		pd.DBColumns = headscaledb.AllowedColumns
+		hdbClient := headscaledb.New(hdb)
+		if full, err := hdbClient.ListFullNodes(); err == nil {
+			if row, ok := full[id]; ok {
+				pd.DBRow = row
+				pd.DERPID = derpFromHostInfo(row["host_info"])
+				pd.DERPName = derpName(pd.DERPID)
+				if raw := row["host_info"]; raw != "" {
+					var hi any
+					if json.Unmarshal([]byte(raw), &hi) == nil {
+						if b, err := json.MarshalIndent(hi, "", "  "); err == nil {
+							pd.HostInfoJSON = string(b)
+						}
+					}
+				}
+				if akID := row["auth_key_id"]; akID != "" && akID != "0" {
+					if k, err := hdbClient.GetPreAuthKey(akID); err == nil && k.ID != "" {
+						pd.AuthKey = k
+						if k.Tags != "" {
+							_ = json.Unmarshal([]byte(k.Tags), &pd.AuthKeyTags)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Tag chips for the Edit-tags shortcut on this page.
+	if pol, err := c.GetPolicy(ctx); err == nil {
+		if parsed := parsePolicy(pol.Policy); parsed != nil {
+			for tag := range parsed.TagOwners {
+				pd.KnownTags = append(pd.KnownTags, tag)
+			}
+			sort.Strings(pd.KnownTags)
+		}
+	}
+
+	if events, err := audit.ListForNode(h.db, id, 50); err == nil {
+		pd.Audit = events
+	}
+
+	h.render(w, "node_detail.html", pd)
 }
 
 func (h *Handler) nodesTags(w http.ResponseWriter, r *http.Request) {

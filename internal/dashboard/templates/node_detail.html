@@ -1,0 +1,243 @@
+{{define "title"}}{{if .Node}}{{.Node.GivenName}}{{else}}Node{{end}}{{end}}
+{{define "content"}}
+
+{{if .HeadscaleError}}
+<div class="alert alert-warning"><strong>Headscale connection:</strong> {{.HeadscaleError}} <a href="/settings#headscale" class="alert-link">Configure</a></div>
+{{else if not .Node}}
+<div class="alert alert-warning">Node not found.</div>
+{{else}}
+
+{{$n := .Node}}
+{{$db := .DBRow}}
+
+<!-- Header: identity + status + actions -->
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <a href="/nodes" class="text-muted small">← Nodes</a>
+    <span class="text-muted">/</span>
+    <span class="badge bg-secondary text-white">#{{$n.ID}}</span>
+    <h2 class="page-title m-0">{{$n.GivenName}}</h2>
+    {{if ne $n.Name $n.GivenName}}<small class="text-muted">({{$n.Name}})</small>{{end}}
+    {{if $n.Online}}<span class="badge bg-success text-white">online</span>{{else}}<span class="badge bg-danger text-white">offline</span>{{end}}
+    {{if .IsStale}}<span class="badge bg-warning" title="Not seen in over 30 days">stale</span>{{end}}
+    {{if .DERPName}}<span class="badge bg-azure text-white" title="Preferred DERP region (from NetInfo)">DERP: {{.DERPName}}</span>{{end}}
+
+    <div class="ms-auto d-flex gap-2">
+        {{if .DBEnabled}}<button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#edit-{{$n.ID}}">Edit…</button>{{end}}
+        <form method="post" action="/nodes/expire" class="m-0" onsubmit="return confirm('Expire {{$n.GivenName}}?');">
+            <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="id" value="{{$n.ID}}">
+            <button class="btn btn-sm btn-outline-warning">Expire</button>
+        </form>
+        <form method="post" action="/nodes/delete" class="m-0" onsubmit="return confirm('Delete {{$n.GivenName}}? This is permanent.');">
+            <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="id" value="{{$n.ID}}">
+            <button class="btn btn-sm btn-outline-danger">Delete</button>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3">
+
+    <!-- Left column: identity, network, tags, auth key -->
+    <div class="col-lg-7 d-flex flex-column gap-3">
+
+        <!-- Identity -->
+        <div class="card">
+            <div class="card-header py-2"><strong>Identity</strong></div>
+            <div class="card-body py-2">
+                <dl class="row mb-0 small">
+                    <dt class="col-sm-3">Owner user</dt>             <dd class="col-sm-9">{{$n.User.Name}}</dd>
+                    <dt class="col-sm-3">Hostname</dt>               <dd class="col-sm-9"><code>{{$n.Name}}</code></dd>
+                    <dt class="col-sm-3">Given name</dt>             <dd class="col-sm-9"><code>{{$n.GivenName}}</code></dd>
+                    {{if $db}}
+                    <dt class="col-sm-3">Created</dt>                <dd class="col-sm-9"><span class="text-muted">{{index $db "created_at"}}</span></dd>
+                    <dt class="col-sm-3">Updated</dt>                <dd class="col-sm-9"><span class="text-muted">{{index $db "updated_at"}}</span></dd>
+                    {{end}}
+                    <dt class="col-sm-3">Last seen</dt>              <dd class="col-sm-9"><span class="text-muted">{{$n.LastSeen}}</span></dd>
+                    {{if $n.Expiry}}
+                    <dt class="col-sm-3">Expiry</dt>                 <dd class="col-sm-9"><span class="text-muted">{{$n.Expiry}}</span></dd>
+                    {{end}}
+                    {{if $n.RegisterMe}}
+                    <dt class="col-sm-3">Register method</dt>        <dd class="col-sm-9"><code>{{$n.RegisterMe}}</code></dd>
+                    {{end}}
+                </dl>
+            </div>
+        </div>
+
+        <!-- Network -->
+        <div class="card">
+            <div class="card-header py-2"><strong>Network</strong></div>
+            <div class="card-body py-2">
+                <dl class="row mb-0 small">
+                    <dt class="col-sm-3">Tailnet IPs</dt>
+                    <dd class="col-sm-9"><code>{{range $i, $ip := $n.IPAddrs}}{{if $i}}, {{end}}{{$ip}}{{end}}</code></dd>
+                    {{if .DERPName}}
+                    <dt class="col-sm-3">DERP region</dt>
+                    <dd class="col-sm-9"><span class="badge bg-azure text-white">{{.DERPName}}</span> <span class="text-muted">(id {{.DERPID}})</span></dd>
+                    {{end}}
+                    {{if $n.ApprovedRoutes}}
+                    <dt class="col-sm-3">Approved routes</dt>
+                    <dd class="col-sm-9">{{range $i, $r := $n.ApprovedRoutes}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}</dd>
+                    {{end}}
+                    {{if $n.AvailableRoutes}}
+                    <dt class="col-sm-3">Available routes</dt>
+                    <dd class="col-sm-9">{{range $i, $r := $n.AvailableRoutes}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}</dd>
+                    {{end}}
+                    {{if $n.SubnetRoutes}}
+                    <dt class="col-sm-3">Subnet routes</dt>
+                    <dd class="col-sm-9">{{range $i, $r := $n.SubnetRoutes}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}</dd>
+                    {{end}}
+                    {{if $db}}
+                    {{with index $db "endpoints"}}{{if .}}
+                    <dt class="col-sm-3">Endpoints</dt>
+                    <dd class="col-sm-9 font-monospace small text-muted text-break">{{.}}</dd>
+                    {{end}}{{end}}
+                    {{end}}
+                </dl>
+            </div>
+        </div>
+
+        <!-- Tags -->
+        <div class="card">
+            <div class="card-header py-2"><strong>Tags</strong></div>
+            <div class="card-body py-2">
+                {{if $n.Tags}}
+                    {{range $n.Tags}}<span class="tag-badge tag-forced me-1">{{.}}</span>{{end}}
+                {{else}}
+                    <span class="text-muted small">No tags assigned.</span>
+                {{end}}
+                <form method="post" action="/nodes/tags" class="d-flex gap-2 mt-3">
+                    <input type="hidden" name="csrf" value="{{.CSRF}}">
+                    <input type="hidden" name="id" value="{{$n.ID}}">
+                    <input type="text" name="tags" class="form-control form-control-sm" value="{{range $i, $t := $n.Tags}}{{if $i}},{{end}}{{$t}}{{end}}" placeholder="tag:foo,tag:bar">
+                    <button class="btn btn-sm btn-primary" type="submit">Update tags</button>
+                </form>
+                <small class="form-hint mt-1 d-block">Updates Headscale via REST. For tags Headscale rejects (non-tagOwner), edit the raw <code>tags</code> column in the Edit modal instead.</small>
+            </div>
+        </div>
+
+        <!-- Auth key -->
+        {{if .AuthKey.ID}}
+        <div class="card">
+            <div class="card-header py-2"><strong>Auth key</strong> <span class="text-muted small ms-2">id #{{.AuthKey.ID}}</span></div>
+            <div class="card-body py-2">
+                <dl class="row mb-0 small">
+                    <dt class="col-sm-3">Prefix</dt>  <dd class="col-sm-9"><code>{{.AuthKey.Prefix}}</code> <span class="text-muted">(secret stored as hash; never recoverable)</span></dd>
+                    <dt class="col-sm-3">Used</dt>   <dd class="col-sm-9">{{if eq .AuthKey.Used "1"}}<span class="badge bg-secondary text-white">used</span>{{else}}<span class="text-muted">no</span>{{end}}</dd>
+                    <dt class="col-sm-3">Reusable</dt> <dd class="col-sm-9">{{if eq .AuthKey.Reusable "1"}}yes{{else}}no{{end}}</dd>
+                    <dt class="col-sm-3">Ephemeral</dt> <dd class="col-sm-9">{{if eq .AuthKey.Ephemeral "1"}}yes{{else}}no{{end}}</dd>
+                    {{if .AuthKey.Expiration}}<dt class="col-sm-3">Expiration</dt> <dd class="col-sm-9"><span class="text-muted">{{.AuthKey.Expiration}}</span></dd>{{end}}
+                    {{if .AuthKey.CreatedAt}}<dt class="col-sm-3">Created</dt> <dd class="col-sm-9"><span class="text-muted">{{.AuthKey.CreatedAt}}</span></dd>{{end}}
+                    {{if .AuthKeyTags}}
+                    <dt class="col-sm-3">aclTags</dt>
+                    <dd class="col-sm-9">{{range .AuthKeyTags}}<span class="tag-badge tag-forced me-1">{{.}}</span>{{end}}</dd>
+                    {{end}}
+                </dl>
+            </div>
+        </div>
+        {{end}}
+    </div>
+
+    <!-- Right column: hostinfo, recent audit, danger keys -->
+    <div class="col-lg-5 d-flex flex-column gap-3">
+
+        {{if .HostInfoJSON}}
+        <div class="card">
+            <div class="card-header py-2 d-flex align-items-center"><strong>host_info</strong> <small class="text-muted ms-2">(reported by the node)</small></div>
+            <div class="card-body py-2">
+                <pre class="small mb-0" style="max-height:380px;overflow:auto">{{.HostInfoJSON}}</pre>
+            </div>
+        </div>
+        {{end}}
+
+        <div class="card">
+            <div class="card-header py-2"><strong>Recent activity</strong> <small class="text-muted ms-2">last {{len .Audit}}</small></div>
+            <div class="card-body py-2">
+                {{if .Audit}}
+                <table class="table table-sm small mb-0">
+                    <thead><tr><th class="w-1"></th><th>Action</th><th>Target</th><th>When</th></tr></thead>
+                    <tbody>
+                    {{range .Audit}}
+                        <tr>
+                            <td class="text-muted">#{{.ID}}</td>
+                            <td><code>{{.Action}}</code></td>
+                            <td class="text-truncate" style="max-width:18ch" title="{{.Target}}">{{.Target}}</td>
+                            <td><span class="text-muted">{{.Timestamp.Format "2006-01-02 15:04:05"}}</span></td>
+                        </tr>
+                    {{end}}
+                    </tbody>
+                </table>
+                {{else}}
+                <span class="text-muted small">No audit events recorded for this node yet.</span>
+                {{end}}
+            </div>
+        </div>
+
+        {{if $db}}
+        <div class="card border-warning">
+            <div class="card-header py-2 bg-warning-subtle"><strong>Cryptographic keys</strong> <small class="text-muted ms-2">(read-only here; edit only via the danger gate)</small></div>
+            <div class="card-body py-2">
+                <dl class="row mb-0 small font-monospace">
+                    <dt class="col-sm-4">machine_key</dt> <dd class="col-sm-8 text-break">{{index $db "machine_key"}}</dd>
+                    <dt class="col-sm-4">node_key</dt>    <dd class="col-sm-8 text-break">{{index $db "node_key"}}</dd>
+                    <dt class="col-sm-4">disco_key</dt>   <dd class="col-sm-8 text-break">{{index $db "disco_key"}}</dd>
+                </dl>
+            </div>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Edit modal: same shape as the index page so this row's modal lives here too -->
+{{if .DBEnabled}}{{$db := .DBRow}}{{$root := .}}
+<div class="modal modal-lg" id="edit-{{$n.ID}}" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <form class="modal-content" method="post" action="/nodes/edit">
+            <input type="hidden" name="csrf" value="{{$root.CSRF}}">
+            <input type="hidden" name="id" value="{{$n.ID}}">
+
+            <div class="modal-header py-3">
+                <div>
+                    <h5 class="modal-title m-0">Edit node #{{$n.ID}}{{if $n.GivenName}} — {{$n.GivenName}}{{end}}</h5>
+                    {{if $n.Name}}<small class="text-muted">hostname: <code>{{$n.Name}}</code></small>{{end}}
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-4"><label class="form-label">id</label>
+                        <input type="number" name="new_id" class="form-control" value="{{index $db "id"}}" min="1"></div>
+                    <div class="col-md-4"><label class="form-label">hostname</label>
+                        <input type="text" name="hostname" class="form-control" value="{{index $db "hostname"}}"></div>
+                    <div class="col-md-4"><label class="form-label">given_name</label>
+                        <input type="text" name="given_name" class="form-control" value="{{index $db "given_name"}}" maxlength="63"></div>
+                </div>
+                <div class="row g-3 mt-1">
+                    <div class="col-md-6"><label class="form-label">ipv4</label>
+                        <input type="text" name="ipv4" class="form-control" value="{{index $db "ipv4"}}"></div>
+                    <div class="col-md-6"><label class="form-label">ipv6</label>
+                        <input type="text" name="ipv6" class="form-control" value="{{index $db "ipv6"}}"></div>
+                </div>
+                <div class="row g-3 mt-1">
+                    <div class="col-12"><label class="form-label">tags <small class="text-muted">(JSON array, raw column)</small></label>
+                        <input type="text" name="tags" class="form-control font-monospace" value="{{index $db "tags"}}"></div>
+                    <div class="col-12"><label class="form-label">approved_routes <small class="text-muted">(JSON array)</small></label>
+                        <textarea name="approved_routes" class="form-control font-monospace" rows="2" spellcheck="false">{{index $db "approved_routes"}}</textarea></div>
+                </div>
+
+                <div class="form-check mt-3">
+                    <input type="checkbox" name="restart_after" class="form-check-input" id="restart-{{$n.ID}}" checked>
+                    <label class="form-check-label" for="restart-{{$n.ID}}">Restart Headscale after save</label>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+{{end}}
+
+{{end}}
+{{end}}

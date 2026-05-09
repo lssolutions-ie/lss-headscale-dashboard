@@ -49,6 +49,46 @@ func Write(d *sql.DB, actorUserID *int64, ip, action, target string, details map
 	}
 }
 
+// ListForNode returns audit entries that touched the node id, newest first.
+// Three target shapes are written for nodes elsewhere in the codebase:
+//   - "node.<id>"        (settings.update from /nodes/edit)
+//   - "node.tags.<id>"   (settings.update from /nodes/tags)
+//   - "<id>"             (headscale.node.expire / .delete — bare id)
+//
+// The bare-id form is filtered to the two node actions to avoid false-matching
+// against other rows where target happens to be a number.
+func ListForNode(d *sql.DB, nodeID string, limit int) ([]Entry, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := d.Query(`
+		SELECT id, actor_user_id, COALESCE(ip,''), action, COALESCE(target,''), COALESCE(details_json,''), ts
+		FROM audit_log
+		WHERE target = ?
+		   OR target = ?
+		   OR (target = ? AND action IN (?, ?))
+		ORDER BY id DESC LIMIT ?
+	`, "node."+nodeID, "node.tags."+nodeID, nodeID, ActionNodeExpire, ActionNodeDelete, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Entry
+	for rows.Next() {
+		var e Entry
+		var actor sql.NullInt64
+		if err := rows.Scan(&e.ID, &actor, &e.IP, &e.Action, &e.Target, &e.Details, &e.Timestamp); err != nil {
+			return nil, err
+		}
+		if actor.Valid {
+			a := actor.Int64
+			e.ActorUserID = &a
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // List returns the most recent audit entries (newest first), paginated.
 func List(d *sql.DB, limit, offset int) ([]Entry, error) {
 	if limit <= 0 || limit > 500 {
