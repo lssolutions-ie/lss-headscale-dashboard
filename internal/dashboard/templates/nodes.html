@@ -460,7 +460,7 @@
 <div class="card allow-overflow">
     <div class="table-search-row d-flex gap-2 align-items-center">
         <input type="search" class="form-control form-control-sm" placeholder="Search across all columns…" data-search="#nodes-table">
-        <select class="form-select form-select-sm" style="max-width:140px" data-filter="#nodes-table" data-col="5">
+        <select class="form-select form-select-sm" style="max-width:140px" data-filter="#nodes-table" data-col="6">
             <option value="">All statuses</option>
             <option value="online">online</option>
             <option value="offline">offline</option>
@@ -473,6 +473,11 @@
             <option value="">All tags</option>
             {{range .TagsList}}<option value="{{.}}">{{.}}</option>{{end}}
         </select>
+        <select class="form-select form-select-sm" style="max-width:140px" data-filter="#nodes-table" data-col="5">
+            <option value="">All DERP</option>
+            {{range .DERPList}}<option value="{{.}}">{{.}}</option>{{end}}
+            <option value="—">No DERP</option>
+        </select>
         <select class="form-select form-select-sm" style="max-width:170px" data-attr-filter="#nodes-table" data-attr="stale">
             <option value="">All ages</option>
             <option value="0">Active (≤30 days)</option>
@@ -482,7 +487,7 @@
     </div>
     <div class="table-responsive">
         <table id="nodes-table" class="table table-compact">
-            <thead><tr><th class="w-1">ID</th><th>Name</th><th>User</th><th>IPs</th><th>Tags</th><th>Status</th><th>Last seen</th><th class="w-1"></th></tr></thead>
+            <thead><tr><th class="w-1">ID</th><th>Name</th><th>User</th><th>IPs</th><th>Tags</th><th>DERP</th><th>Status</th><th>Last seen</th><th class="w-1"></th></tr></thead>
             <tbody>
             {{range .Nodes}}
                 <tr data-stale="{{if .IsStale}}1{{else}}0{{end}}">
@@ -493,6 +498,7 @@
                     <td>
                         {{range .Tags}}<span class="tag-badge tag-forced">{{.}}</span>{{end}}
                     </td>
+                    <td>{{if .DERPName}}<span class="badge bg-azure text-white" title="Preferred DERP region (from NetInfo)">{{.DERPName}}</span>{{else}}<span class="text-muted small">—</span>{{end}}</td>
                     <td>{{if .Online}}<span class="badge bg-success text-white">online</span>{{else}}<span class="badge bg-danger text-white">offline</span>{{end}}</td>
                     <td><span class="text-muted small">{{.LastSeen}}</span>{{if .IsStale}} <span class="badge bg-warning" title="Not seen in over 30 days">stale</span>{{end}}</td>
                     <td>
@@ -514,7 +520,7 @@
                     </td>
                 </tr>
             {{else}}
-                <tr><td colspan="8" class="text-muted">No nodes registered.</td></tr>
+                <tr><td colspan="9" class="text-muted">No nodes registered.</td></tr>
             {{end}}
             </tbody>
         </table>

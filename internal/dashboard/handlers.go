@@ -322,7 +322,49 @@ func (h *Handler) usersDelete(w http.ResponseWriter, r *http.Request) {
 // the template can't do time arithmetic.
 type nodeView struct {
 	headscale.Node
-	IsStale bool // last seen > 30 days ago, or no parseable last_seen
+	IsStale  bool   // last seen > 30 days ago, or no parseable last_seen
+	DERPID   int    // node's preferred DERP region from host_info.NetInfo.PreferredDERP, 0 if unknown
+	DERPName string // friendly name when known, else "DERP <id>"
+}
+
+// knownDERPRegions maps region IDs to a short label. Region 999 is reserved
+// for Headscale's embedded DERP server; the others are Tailscale's public
+// fleet (numbers stable per Tailscale's derpmap).
+var knownDERPRegions = map[int]string{
+	999: "LSS",
+	1:   "NYC", 2: "SFO", 3: "SIN", 4: "FRA", 5: "SYD", 6: "BLR",
+	7: "TOK", 8: "LHR", 9: "SAO", 10: "ORD", 11: "PAR", 12: "TOR",
+	13: "MAD", 14: "AMS", 15: "JNB", 16: "MIA", 17: "WAW", 18: "DBI",
+	19: "DFW", 20: "SEA", 21: "DEN", 22: "LAX", 23: "IAD", 24: "DUB",
+	25: "FAR", 26: "HEL", 27: "MUC", 28: "TUR", 29: "HKG", 30: "LIS",
+	31: "BNA", 32: "STO", 33: "TLV",
+}
+
+// derpFromHostInfo extracts NetInfo.PreferredDERP from a node's host_info
+// JSON blob. Tolerant of missing/malformed input — returns 0.
+func derpFromHostInfo(raw string) int {
+	if raw == "" {
+		return 0
+	}
+	var hi struct {
+		NetInfo struct {
+			PreferredDERP int `json:"PreferredDERP"`
+		} `json:"NetInfo"`
+	}
+	if err := json.Unmarshal([]byte(raw), &hi); err != nil {
+		return 0
+	}
+	return hi.NetInfo.PreferredDERP
+}
+
+func derpName(id int) string {
+	if id == 0 {
+		return ""
+	}
+	if name, ok := knownDERPRegions[id]; ok {
+		return name
+	}
+	return fmt.Sprintf("DERP %d", id)
 }
 
 // staleAfter is how long a node can be unseen before the UI flags it.
@@ -343,6 +385,7 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 		UsersList []string // values present on existing nodes (incl. virtual 'tagged-devices') — for the table filter
 		RealUsers []string // actual Headscale users from ListUsers — for Register Node dropdown
 		TagsList  []string
+		DERPList  []string // distinct DERP region names present on rows, for the filter dropdown
 		DBEnabled bool
 		DBNodes   map[string]headscaledb.FullNode
 		DBColumns []string
@@ -388,12 +431,36 @@ func (h *Handler) nodes(w http.ResponseWriter, r *http.Request) {
 				default:
 					pd.OfflineCount++
 				}
-				views = append(views, nodeView{Node: n, IsStale: stale})
+				// DERP region comes from host_info.NetInfo.PreferredDERP. Only
+				// online nodes report fresh values; stale ones still keep the
+				// last value the daemon sent before disconnecting.
+				derpID := 0
+				if pd.DBNodes != nil {
+					if row, ok := pd.DBNodes[n.ID]; ok {
+						derpID = derpFromHostInfo(row["host_info"])
+					}
+				}
+				views = append(views, nodeView{
+					Node:     n,
+					IsStale:  stale,
+					DERPID:   derpID,
+					DERPName: derpName(derpID),
+				})
 			}
 			pd.TotalCount = len(views)
 			pd.Nodes = views
 			pd.UsersList = uniqueUsersFromNodes(ns)
 			pd.TagsList = uniqueTagsFromNodes(ns)
+			derpSeen := map[string]bool{}
+			for _, v := range views {
+				if v.DERPName != "" {
+					derpSeen[v.DERPName] = true
+				}
+			}
+			for name := range derpSeen {
+				pd.DERPList = append(pd.DERPList, name)
+			}
+			sort.Strings(pd.DERPList)
 		}
 		// Real Headscale users (for the Register Node "Owner user" dropdown).
 		// `tagged-devices` is a virtual user Headscale auto-assigns to tagged
