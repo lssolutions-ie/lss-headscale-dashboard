@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A self-hosted web management dashboard for [Headscale](https://github.com/juanfont/headscale). Single Go binary, server-rendered, ships with a one-line installer. Designed to run **co-located with `headscaled`** so it can edit columns the API doesn't expose (ipv4, ipv6, hostname, machine_key, etc.) directly in Headscale's SQLite DB and restart Headscale to pick up the change. Remote installs work too — they just lose the direct-DB features.
 
-Current release: **v1.9.0**. Considered feature-complete for daily-driver use. See ROADMAP.md for the items deferred to v1.10+.
+Current release: **v1.13.0**. See ROADMAP.md for what's been shipped since v1.9 and what's still on the list.
 
 ## Stack
 
@@ -46,7 +46,34 @@ Two channels:
 - **Routes are stored inline** as `nodes.approved_routes` JSON column — there's no separate routes table.
 - **Headscale's API returns user IDs as strings** even though they're uint64 in the proto.
 - **Usernames must contain `@`** for Headscale 0.28's ACL v2 parser. Any policy whose `groups` references a non-`@` user gets rejected with `"Username has to contain @"`. The `/users` New-user form requires `@` up-front; rename existing users with `headscale users rename --identifier <numeric-id> --new-name <name@suffix>` (the `--name` flag won't match a bare username because the lookup itself expects `@`).
-- **Check the `*` Tabler badge text colour** — Tabler's `bg-success`/`bg-danger` rules beat `.text-white`. Use `!important` overrides (already in `base.html`).
+- **Auth-key + `--advertise-tags` is rejected** (state.go:1335). When a pre-auth key has `aclTags`, Headscale 0.28 hard-rejects any registration whose `Hostinfo.RequestTags` is non-empty — the misleading error is `"requested tags [...] are invalid or not permitted"`. Tags travel on the key; the dashboard's `buildRegisterCommand` therefore omits `--advertise-tags` (fixed v1.10.6).
+- **Hostname/given_name auto-revert race** (types/node.go:582 `ApplyHostnameFromHostInfo`). Direct-DB hostname edits get overwritten by the node's reported OS hostname on its next MapRequest, and the revert is persisted back to the DB. `GivenNameHasBeenChanged()` is misnamed — returns TRUE when given_name still matches sanitized(hostname). The dashboard documents this in the Edit modal hint; a sticky workaround (write `host_info.Hostname` alongside `nodes.hostname`) is on the roadmap.
+- **Auth key secrets are returned exactly once** on POST `/api/v1/preauthkey`. `GET /api/v1/preauthkey` redacts to `prefix + ***`; the DB only stores `prefix + bcrypt_hash`. **Never reconstruct an auth key by reading the prefix and inventing the suffix** — mint a fresh one. A correctly-formed Headscale 0.28 auth key is exactly 88 chars: `hskey-auth-` (11) + prefix (12) + `-` (1) + secret (64).
+- **Check the `*` Tabler badge text colour** — Tabler's `bg-success`/`bg-danger`/`bg-warning` rules beat `.text-white`. The `!important` override in `base.html` covers all three.
+
+## DERP (relay) plumbing
+
+Headscale ships an embedded DERP server. The dashboard surfaces the
+node's preferred region in the `/nodes` table (DERP column) and on
+`/nodes/{id}` (parsed from `nodes.host_info.NetInfo.PreferredDERP`).
+
+When the embedded DERP is enabled in `/etc/headscale/config.yaml`:
+
+- `derp.server.enabled: true`, region 999 by convention.
+- `derp.server.stun_listen_addr` should not collide with anything else
+  on the host (3478/UDP is commonly used by Unifi). Pick a free port,
+  forward UDP from the public IP to the headscale host, and clients
+  pick up the port from the served derpmap.
+- DERP HTTPS traffic shares the existing `lsshs.lssolutions.ie` host;
+  HAProxy's catch-all backend forwards `/derp` and `/derp/probe` to
+  Headscale's :8080 with no extra config. **`timeout tunnel 1h`** on
+  the Headscale backend matters — DERP holds long-lived WebSockets.
+- Drop the public Tailscale derpmap (`derp.urls`) from the list to
+  pin clients to the local region only, or keep it as fallback.
+- Region-name mapping in `internal/dashboard/handlers.go::knownDERPRegions`.
+  Region 999 → "LSS"; Tailscale's public regions (1..33) keep their
+  city codes as a best-effort fallback. Anything unknown renders as
+  "DERP <id>" so misconfigurations stay visible.
 
 ## Deploy topology
 
@@ -127,10 +154,14 @@ internal/
                                    # SetupSigner (HMAC key persisted in settings)
   dashboard/                       # authenticated UI (post-login)
     handlers.go                    # nodes / users / preauthkeys / settings /
-                                   # register-node / audit / routes / safe-danger
+                                   # register-node / audit / routes / safe-danger /
+                                   # /nodes/{id} detail page
+    register_presets.go            # /nodes/register/presets/{save,delete} +
+                                   # loadRegisterPresets used by the nodes handler
     policy.go                      # ACL viewer + builder + raw editor
     tags.go                        # /tags page (rename/delete with full propagation)
     templates/                     # base.html + per-page html/templates
+                                   # incl. node_detail.html for /nodes/{id}
   db/                              # dashboard's own SQLite + migrations
   headscale/                       # REST client (Users, Nodes, PreAuthKeys, Policy)
   headscaledb/                     # local DB editor (Headscale's SQLite); SafeColumns + DangerColumns
@@ -172,6 +203,8 @@ Authenticated:
   GET  /                            (overview)
   GET  /users,        POST /users/{create,delete}
   GET  /nodes,        POST /nodes/{expire,delete,tags,edit,register}
+  GET  /nodes/{id}                  (per-node detail page)
+  POST /nodes/register/presets/{save,delete}
   GET  /nodes/wait                  (post-restart spinner)
   GET  /preauthkeys,  POST /preauthkeys/{create,expire}
   GET  /tags,         POST /tags/{add,rename,delete}
@@ -205,3 +238,7 @@ Authenticated:
 - **Don't introduce CGO.** SQLite via `modernc.org/sqlite`. Cross-compile in CI depends on this.
 - **Always restart Headscale after a direct-DB write.** The `restart_after` checkbox in the Edit modal handles this; the wait/spinner page (`/nodes/wait`) polls `/headscale/ready` until the API answers. Polling timeout is 90s — busy NetMap rebuilds (many nodes) can take ~minute.
 - **Password reset deliberately doesn't reveal user existence.** `/forgot` always renders the success page; failures are logged to slog only. Keep it that way.
+- **`form.reset()` is shadowed in the Register Node form.** The form has `<input name="reset">` for `tailscale up --reset`, which shadows `HTMLFormElement.reset()` via the named-accessor — calling it throws. Walk an explicit field list when applying a preset (see `applyPreset` in `nodes.html`) instead of relying on `.reset()`. Same applies to anyone naming an input after a built-in form method (`submit`, `checkValidity`, etc.).
+- **Register Node: tags travel on the key, not on the command line.** `buildRegisterCommand` deliberately omits `--advertise-tags` even when the user picks tags in the form — Headscale 0.28 rejects auth-key registrations that also send `Hostinfo.RequestTags`. Tags are encoded into the auth key's aclTags via the API.
+- **Filters on `/nodes` (and other table pages) persist via sessionStorage.** Keyed off the table id + filter role. New filter dropdowns just need the right `data-search` / `data-filter` / `data-attr-filter` attributes — restoration is automatic via the universal handler in `base.html`.
+- **Stale node detection is server-side.** `nodes` handler computes `IsStale = last_seen older than 30d (or unparseable)` from API data; the per-row `<tr data-stale="0|1">` lets the universal `data-attr-filter` filter rows without re-running the loop in JS. The header badges (`total`, `online`, `offline`, `stale`) are mutually exclusive: a node is exactly one bucket. Online beats stale in the header (a stale node that's currently online counts as online).
