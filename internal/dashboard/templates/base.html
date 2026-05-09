@@ -143,6 +143,41 @@ document.addEventListener('change', (e) => {
         tr.style.display = v.toLowerCase().includes(want.toLowerCase()) ? '' : 'none';
     });
 });
+
+// Filter persistence: every [data-search] / [data-filter] / [data-attr-filter]
+// gets a stable sessionStorage key based on its target table + role, so the
+// chosen filter survives full-page refreshes and the /nodes/wait redirect
+// after a Headscale restart. sessionStorage is per-tab so closing the tab
+// (or reopening the dashboard fresh) starts with an empty view.
+(function () {
+    const filterKey = (el) => {
+        if (el.dataset.search) return `flt:${el.dataset.search}:search`;
+        if (el.dataset.filter) return `flt:${el.dataset.filter}:col:${el.dataset.col}`;
+        if (el.dataset.attrFilter) return `flt:${el.dataset.attrFilter}:attr:${el.dataset.attr}`;
+        return null;
+    };
+    const persist = (el) => {
+        const key = filterKey(el);
+        if (!key) return;
+        if (el.value) sessionStorage.setItem(key, el.value);
+        else sessionStorage.removeItem(key);
+    };
+    document.addEventListener('input', (e) => { if (e.target.dataset.search) persist(e.target); });
+    document.addEventListener('change', (e) => {
+        if (e.target.dataset.filter || e.target.dataset.attrFilter) persist(e.target);
+    });
+    // Restore on initial paint. Dispatch the matching event so the existing
+    // filter handlers above re-run and actually apply the visible state.
+    document.querySelectorAll('[data-search], [data-filter], [data-attr-filter]').forEach(el => {
+        const key = filterKey(el);
+        if (!key) return;
+        const v = sessionStorage.getItem(key);
+        if (v == null || v === '') return;
+        el.value = v;
+        const evtName = el.dataset.search ? 'input' : 'change';
+        el.dispatchEvent(new Event(evtName, { bubbles: true }));
+    });
+})();
 </script>
 </body>
 </html>
