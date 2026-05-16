@@ -138,3 +138,13 @@ Current release: **v1.13.0** — production daily-driver, 86 nodes in flight.
 - Running a derper binary from the dashboard process. Operators run
   Headscale's embedded DERP (or a separate `derper`); the dashboard
   only surfaces what region each node prefers.
+- **Cosmetic re-labelling of upstream protocol values** (the May-2026
+  `tagged-devices` → custom-label question). The dashboard renders
+  what Headscale's API tells it. If a name needs to change, the change
+  belongs upstream — a dashboard-only alias diverges from `headscale
+  nodes list`, gRPC responses, and journalctl, which makes debugging
+  worse, not better. Forks are also a non-goal.
+- Forking Headscale. Workarounds for Headscale 0.28 quirks live in the
+  dashboard (e.g. dropping `--advertise-tags`, direct-DB editing of
+  unreachable columns) only when they don't introduce divergence between
+  dashboard output and Headscale's own surfaces.
